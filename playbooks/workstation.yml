@@ -1,0 +1,15 @@
+---
+- name: Configure Ubuntu workstation
+  hosts: localhost
+  connection: local
+  become: true
+  pre_tasks:
+    - name: Load host-specific variables when present
+      ansible.builtin.include_vars:
+        file: "{{ item }}"
+      loop:
+        - "{{ playbook_dir }}/../inventory/host_vars/{{ ansible_hostname }}.yml"
+        - "{{ playbook_dir }}/../inventory/host_vars/{{ ansible_fqdn }}.yml"
+      when: lookup('ansible.builtin.fileglob', item, errors='ignore')
+  roles:
+    - role: base
