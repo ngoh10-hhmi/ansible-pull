@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule ansible-pull workstation runs
+
+[Timer]
+OnCalendar={{ ansible_pull_timer_on_calendar }}
+RandomizedDelaySec={{ ansible_pull_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
