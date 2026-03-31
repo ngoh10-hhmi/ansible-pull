@@ -1,0 +1,20 @@
+workstation_base_packages:
+  - ca-certificates
+  - curl
+  - git
+  - openssh-server
+  - python3
+  - python3-apt
+  - rsync
+  - sudo
+  - unattended-upgrades
+  - wget
+  - btop
+
+workstation_optional_packages:
+  - htop
+  - vim
+
+apt_maintenance_enabled: false
+workstation_enable_unattended_upgrades: true
+workstation_enable_periodic_package_list_update: true
