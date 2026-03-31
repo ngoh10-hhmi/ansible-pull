@@ -10,11 +10,20 @@ Example:
 
 ```yaml
 workstation_base_packages:
+  - ca-certificates
+  - curl
   - git
+  - openssh-server
+  - python3
+  - python3-apt
+  - rsync
+  - sudo
+  - unattended-upgrades
+  - wget
+
+workstation_optional_packages:
   - htop
-  - tmux
   - vim
-  - ufw
 ```
 
 If a machine needs no special settings yet, you can skip this.
@@ -31,18 +40,17 @@ For your current plan, use a public HTTPS repo and no GitHub credential at all.
 
 ## 3. Copy bootstrap files to the machine
 
-You need:
-
-- [bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh)
-- [run-ansible-pull.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/run-ansible-pull.sh)
+You only need [bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh). It performs the initial clone itself.
 
 ## 4. Bootstrap
 
 Run:
 
 ```bash
-sudo ./bootstrap-ubuntu.sh \
-  --repo https://github.com/YOUR_ORG/YOUR_REPO.git \
+curl -fsSL https://raw.githubusercontent.com/ngoh10-hhmi/ansible-pull/main/scripts/bootstrap-ubuntu.sh -o /tmp/bootstrap-ubuntu.sh
+chmod +x /tmp/bootstrap-ubuntu.sh
+sudo /tmp/bootstrap-ubuntu.sh \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
   --branch main
 ```
 
@@ -94,3 +102,5 @@ Using a token file is safer than passing the token directly on the command line.
 - Keep secrets out of the repo
 - Prefer package install and security patching before deeper OS policy changes
 - Add CI before the repo gets large
+
+See [docs/first-workstation.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/first-workstation.md) for the exact first-machine rollout.

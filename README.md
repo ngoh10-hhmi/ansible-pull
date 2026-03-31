@@ -52,14 +52,14 @@ That avoids having to stand up a full Ansible control node on day one.
 On a fresh Ubuntu workstation:
 
 ```bash
-curl -fsSL https://example.com/bootstrap-ubuntu.sh -o /tmp/bootstrap-ubuntu.sh
+curl -fsSL https://raw.githubusercontent.com/ngoh10-hhmi/ansible-pull/main/scripts/bootstrap-ubuntu.sh -o /tmp/bootstrap-ubuntu.sh
 chmod +x /tmp/bootstrap-ubuntu.sh
 sudo /tmp/bootstrap-ubuntu.sh \
-  --repo https://github.com/YOUR_ORG/YOUR_REPO.git \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
   --branch main
 ```
 
-If you do not want to host the bootstrap script elsewhere yet, copy [scripts/bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh) onto the machine and run it directly.
+The bootstrap script now performs the initial clone itself, so you only need this one file on a fresh machine.
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 
@@ -73,10 +73,20 @@ Example:
 
 ```yaml
 workstation_base_packages:
+  - ca-certificates
+  - curl
   - git
-  - vim
-  - htop
   - openssh-server
+  - python3
+  - python3-apt
+  - rsync
+  - sudo
+  - unattended-upgrades
+  - wget
+
+workstation_optional_packages:
+  - htop
+  - vim
 
 apt_maintenance_enabled: false
 ```
@@ -89,6 +99,8 @@ By default this repo is aimed at:
 - Ubuntu updates from the `-updates` pocket
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
+
+The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `workstation_optional_packages` so you can trim them per host if you want a stricter baseline.
 
 Important caveat:
 

@@ -1,7 +1,7 @@
 ---
 - name: Install base Ubuntu packages
   ansible.builtin.apt:
-    name: "{{ workstation_base_packages }}"
+    name: "{{ workstation_base_packages + workstation_optional_packages }}"
     state: present
     update_cache: true
 

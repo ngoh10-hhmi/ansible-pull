@@ -139,7 +139,21 @@ DEST=${DEST}
 LOG_DIR=${LOG_DIR}
 EOF
 
-install -m 0755 "$(dirname "$0")/run-ansible-pull.sh" /usr/local/sbin/run-ansible-pull
+if [[ -d "${DEST}/.git" ]]; then
+  git -C "${DEST}" fetch origin "${BRANCH}"
+  git -C "${DEST}" checkout "${BRANCH}"
+  git -C "${DEST}" reset --hard "origin/${BRANCH}"
+else
+  rm -rf "${DEST}"
+  git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
+fi
+
+if [[ ! -f "${DEST}/scripts/run-ansible-pull.sh" ]]; then
+  echo "Missing ${DEST}/scripts/run-ansible-pull.sh after initial clone." >&2
+  exit 1
+fi
+
+install -m 0755 "${DEST}/scripts/run-ansible-pull.sh" /usr/local/sbin/run-ansible-pull
 
 /usr/local/sbin/run-ansible-pull
 
