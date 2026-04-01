@@ -49,6 +49,7 @@ That avoids having to stand up a full Ansible control node on day one.
 - `scripts/apt-maintenance.sh`: optional full-upgrade helper for non-security maintenance
 - `docs/decision-guide.md`: GitHub vs internal Git hosting tradeoffs
 - `docs/onboarding.md`: how to add and bootstrap a new workstation
+- `docs/targeted-package-updates.md`: how to handle one-off package updates safely
 
 ## Quick start
 
@@ -118,6 +119,8 @@ Important caveat:
 - Firefox on modern Ubuntu is usually a snap, so it is not updated by the APT tasks in this repo.
 - Google Chrome can be kept updated if you add Google's APT repository later.
 - `ansible-pull` keeps config current; Ubuntu's package tools perform the actual updates.
+
+For intentionally updating one package outside the security-only unattended policy, see [docs/targeted-package-updates.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/targeted-package-updates.md).
 
 ## Switching to private later
 

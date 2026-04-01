@@ -111,3 +111,4 @@ Using a token file is safer than passing the token directly on the command line.
 - Add CI before the repo gets large
 
 See [docs/first-workstation.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/first-workstation.md) for the exact first-machine rollout.
+See [docs/targeted-package-updates.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.
