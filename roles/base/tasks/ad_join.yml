@@ -1,0 +1,67 @@
+---
+- name: Check if already joined to AD
+  ansible.builtin.command: realm list
+  register: realm_list_output
+  changed_when: false
+
+- name: Set hostname correctly
+  ansible.builtin.hostname:
+    name: "{{ target_hostname | default(ansible_facts['hostname']) }}.hhmi.org"
+
+- name: Set DNS via resolv.conf
+  ansible.builtin.file:
+    src: ../run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: true
+
+- name: Enable mkhomedir via pam-auth-update
+  ansible.builtin.command: pam-auth-update --enable mkhomedir
+  register: pam_auth_out
+  changed_when: false
+  failed_when: false
+
+- name: Configure idmapd.conf
+  ansible.builtin.lineinfile:
+    path: /etc/idmapd.conf
+    regexp: '^#?Domain\s*='
+    line: 'Domain = hhmi.org'
+    insertafter: '^\[General\]'
+
+- name: Perform Interactive realm join
+  ansible.builtin.shell: |
+    echo "{{ ad_join_password }}" | realm join -U "{{ ad_join_user }}" --automatic-id-mapping=no hhmi.org
+  no_log: true
+  when:
+    - ad_join_user is defined
+    - ad_join_password is defined
+    - "'hhmi.org' not in realm_list_output.stdout"
+
+- name: Deploy SSSD Configuration
+  ansible.builtin.template:
+    src: sssd.conf.j2
+    dest: /etc/sssd/sssd.conf
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart SSSD
+
+- name: Add sudoers definition for scicompsys and AD groups
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/10-scicompsys
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      %scicompsys ALL=(ALL:ALL) ALL
+      {% if ad_sudo_group is defined %}
+      %{{ ad_sudo_group }} ALL=(ALL:ALL) ALL
+      {% endif %}
+
+- name: Add local users to sudo group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: sudo
+    append: true
+  loop: "{{ local_sudo_users | default([]) }}"
+  when: local_sudo_users is defined

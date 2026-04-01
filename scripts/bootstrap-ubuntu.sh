@@ -155,6 +155,52 @@ fi
 
 install -m 0755 "${DEST}/scripts/run-ansible-pull.sh" /usr/local/sbin/run-ansible-pull
 
-/usr/local/sbin/run-ansible-pull
+echo "--- Initial Workstation Config ---"
+while true; do
+  read -p "Enter short hostname (max 15 chars, without .hhmi.org): " SHORT_HOSTNAME
+  if [[ ${#SHORT_HOSTNAME} -gt 15 ]]; then
+    echo "Error: Hostname exceeds 15 characters. Please try again."
+  elif [[ -z "${SHORT_HOSTNAME}" ]]; then
+    echo "Error: Hostname cannot be empty."
+  else
+    break
+  fi
+done
+
+while true; do
+  read -p "Machine type (laptop/desktop): " MACHINE_TYPE
+  if [[ "${MACHINE_TYPE}" == "laptop" || "${MACHINE_TYPE}" == "desktop" ]]; then
+    break
+  else
+    echo "Error: Please enter either 'laptop' or 'desktop'."
+  fi
+done
+
+read -p "Join AD domain hhmi.org now? (y/n): " DO_JOIN
+AD_USER=""
+AD_PASSWORD=""
+if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
+  read -p "AD Admin Username (e.g. duckd-a): " AD_USER
+  read -s -p "AD Admin Password: " AD_PASSWORD
+  echo ""
+fi
+
+# Ensure extra-vars is quoted securely since it contains passwords
+EXTRA_VARS="{ \"target_hostname\": \"${SHORT_HOSTNAME}\", \"machine_type\": \"${MACHINE_TYPE}\""
+if [[ -n "${AD_USER}" ]]; then
+  EXTRA_VARS="${EXTRA_VARS}, \"ad_join_user\": \"${AD_USER}\", \"ad_join_password\": \"${AD_PASSWORD}\""
+fi
+EXTRA_VARS="${EXTRA_VARS} }"
+
+/usr/local/sbin/run-ansible-pull --extra-vars "${EXTRA_VARS}"
 
 systemctl enable --now ansible-pull.timer || true
+
+if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
+  echo ""
+  echo "******************************************************************"
+  echo "WARNING: The machine has been joined to AD (hhmi.org)."
+  echo "A system reboot is REQUIRED before graphical logins will work."
+  echo "Please reboot your machine when ready: sudo reboot"
+  echo "******************************************************************"
+fi

@@ -67,6 +67,36 @@ Pattern:
 
 Use this carefully. `state: latest` is useful for emergency response, but it is broader than the normal conservative baseline.
 
+## Option 4. Manage third-party repositories and PPAs
+
+If a package requires an external repository (like Google Chrome, VS Code, or a PPA), you can define it in `vars/baseline.yml` or a host override file.
+
+### Adding a PPA
+
+```yaml
+base_workstation_ppas:
+  - ppa:ansible/ansible
+```
+
+### Adding an external APT repository with a GPG key
+
+Modern Ubuntu systems prefer GPG keys in `/etc/apt/keyrings/`.
+
+```yaml
+base_workstation_apt_repos:
+  - name: google-chrome
+    key_url: "https://dl.google.com/linux/linux_signing_key.pub"
+    key_filename: "google-chrome.asc"
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
+```
+
+Then add the package to the package list:
+
+```yaml
+base_workstation_extra_packages:
+  - google-chrome-stable
+```
+
 ## Choosing the right option
 
 - Use Option 1 when a package should be installed on a specific host long-term.

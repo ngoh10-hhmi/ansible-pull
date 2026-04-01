@@ -1,0 +1,23 @@
+[sssd]
+domains = hhmi.org
+config_file_version = 2
+#services = nss, pam
+
+[domain/hhmi.org]
+ad_domain = hhmi.org
+ad_maximum_machine_account_password_age = 30
+{% if machine_type | default('desktop') == 'laptop' %}
+ad_server = _srv_, jfdc1.hhmi.org
+backup_ad_server = 172.19.15.120, 172.19.15.10, 10.36.222.11
+{% endif %}
+cache_credentials = True
+dyndns_update = False 
+id_provider = ad 
+krb5_realm = HHMI.ORG
+krb5_renewable_lifetime = 7d
+krb5_renew_interval = 1h
+krb5_store_password_if_offline = True
+ldap_id_mapping = False
+override_homedir = /home/%u@%d
+realmd_tags = manages-system joined-with-adcli
+use_fully_qualified_names = False

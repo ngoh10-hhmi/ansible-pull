@@ -62,5 +62,5 @@ fi
     --inventory "${RUNTIME_INVENTORY}" \
     --limit localhost \
     -e ansible_python_interpreter=/usr/bin/python3 \
-    "${PLAYBOOK}"
+    "${PLAYBOOK}" "$@"
 } >> "${RUN_LOG}" 2>&1

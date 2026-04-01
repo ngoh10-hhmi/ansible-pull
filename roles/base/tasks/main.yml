@@ -1,4 +1,36 @@
 ---
+- name: Ensure /etc/apt/keyrings exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download GPG keys for external APT repositories
+  ansible.builtin.get_url:
+    url: "{{ item.key_url }}"
+    dest: "/etc/apt/keyrings/{{ item.key_filename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ base_workstation_apt_repos }}"
+  when: item.key_url is defined
+
+- name: Add external APT repositories
+  ansible.builtin.apt_repository:
+    repo: "{{ item.repo }}"
+    state: present
+    update_cache: false
+  loop: "{{ base_workstation_apt_repos }}"
+
+- name: Add Ubuntu PPAs
+  ansible.builtin.apt_repository:
+    repo: "{{ item }}"
+    state: present
+    update_cache: false
+  loop: "{{ base_workstation_ppas }}"
+
 - name: Install base Ubuntu packages
   ansible.builtin.apt:
     name: >-
@@ -144,3 +176,6 @@
     append: true
     state: present
   loop: "{{ base_workstation_extra_users }}"
+
+- name: Configure Active Directory and System Join
+  ansible.builtin.import_tasks: ad_join.yml
