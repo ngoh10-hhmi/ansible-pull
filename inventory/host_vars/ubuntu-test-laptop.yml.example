@@ -1,4 +1,4 @@
-workstation_base_packages:
+base_workstation_base_packages:
   - ca-certificates
   - curl
   - git
@@ -10,10 +10,10 @@ workstation_base_packages:
   - unattended-upgrades
   - wget
 
-workstation_optional_packages:
+base_workstation_optional_packages:
   - htop
   - vim
 
-apt_maintenance_enabled: false
-workstation_enable_unattended_upgrades: true
-workstation_enable_periodic_package_list_update: true
+base_apt_maintenance_enabled: false
+base_workstation_enable_unattended_upgrades: true
+base_workstation_enable_periodic_package_list_update: true

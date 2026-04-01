@@ -7,7 +7,7 @@ Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/v
 Example:
 
 ```yaml
-workstation_base_packages:
+base_workstation_base_packages:
   - ca-certificates
   - curl
   - git
@@ -18,7 +18,7 @@ workstation_base_packages:
   - unattended-upgrades
   - wget
 
-workstation_optional_packages:
+base_workstation_optional_packages:
   - htop
   - vim
 ```
@@ -32,10 +32,10 @@ Create:
 Example:
 
 ```yaml
-workstation_base_packages:
+base_workstation_base_packages:
   - openssh-server
 
-workstation_optional_packages:
+base_workstation_optional_packages:
   - tailscale
 ```
 
@@ -91,7 +91,7 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 - Ubuntu security updates
 - Ubuntu `-updates` packages
 - APT-managed packages like `openssh-server`
-- Optional non-security package upgrades if you enable `apt_maintenance_enabled`
+- Optional non-security package upgrades if you enable `base_apt_maintenance_enabled`
 
 This does not automatically manage snap refresh policy.
 

@@ -73,7 +73,7 @@ Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/v
 Example:
 
 ```yaml
-workstation_base_packages:
+base_workstation_base_packages:
   - ca-certificates
   - curl
   - git
@@ -84,7 +84,7 @@ workstation_base_packages:
   - unattended-upgrades
   - wget
 
-workstation_optional_packages:
+base_workstation_optional_packages:
   - htop
   - vim
 ```
@@ -98,14 +98,14 @@ Create a file named after the machine hostname:
 Example:
 
 ```yaml
-workstation_optional_packages:
+base_workstation_optional_packages:
   - htop
   - vim
 
-workstation_base_packages:
+base_workstation_base_packages:
   - openssh-server
 
-apt_maintenance_enabled: false
+base_apt_maintenance_enabled: false
 ```
 
 ## What gets updated automatically
@@ -117,7 +117,7 @@ By default this repo is aimed at:
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
 
-The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `workstation_optional_packages`, and `vars/baseline.yml` is now the main place to adjust the shared fleet baseline.
+The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `base_workstation_optional_packages`, and `vars/baseline.yml` is now the main place to adjust the shared fleet baseline.
 
 Important caveat:
 

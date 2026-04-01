@@ -1,7 +1,7 @@
 ---
 - name: Install base Ubuntu packages
   ansible.builtin.apt:
-    name: "{{ workstation_base_packages + workstation_optional_packages }}"
+    name: "{{ base_workstation_base_packages + base_workstation_optional_packages }}"
     state: present
     update_cache: true
 
@@ -14,8 +14,8 @@
     mode: "0755"
   loop:
     - /etc/ansible
-    - "{{ ansible_pull_directory }}"
-    - "{{ ansible_pull_log_dir }}"
+    - "{{ base_ansible_pull_directory }}"
+    - "{{ base_ansible_pull_log_dir }}"
 
 - name: Install ansible-pull environment file
   ansible.builtin.copy:
@@ -24,11 +24,11 @@
     group: root
     mode: "0600"
     content: |
-      REPO_URL={{ ansible_pull_repo_url }}
-      BRANCH={{ ansible_pull_branch }}
-      PLAYBOOK={{ ansible_pull_playbook }}
-      DEST={{ ansible_pull_directory }}
-      LOG_DIR={{ ansible_pull_log_dir }}
+      REPO_URL={{ base_ansible_pull_repo_url }}
+      BRANCH={{ base_ansible_pull_branch }}
+      PLAYBOOK={{ base_ansible_pull_playbook }}
+      DEST={{ base_ansible_pull_directory }}
+      LOG_DIR={{ base_ansible_pull_log_dir }}
 
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:
@@ -45,7 +45,7 @@
     owner: root
     group: root
     mode: "0755"
-  when: apt_maintenance_enabled
+  when: base_apt_maintenance_enabled
 
 - name: Install ansible-pull service unit
   ansible.builtin.template:
@@ -73,7 +73,7 @@
     group: root
     mode: "0644"
   notify: Reload systemd
-  when: apt_maintenance_enabled
+  when: base_apt_maintenance_enabled
 
 - name: Install apt maintenance timer unit
   ansible.builtin.template:
@@ -83,7 +83,7 @@
     group: root
     mode: "0644"
   notify: Reload systemd
-  when: apt_maintenance_enabled
+  when: base_apt_maintenance_enabled
 
 - name: Enable ansible-pull timer
   ansible.builtin.systemd_service:
@@ -96,7 +96,7 @@
     name: apt-maintenance.timer
     enabled: true
     state: started
-  when: apt_maintenance_enabled
+  when: base_apt_maintenance_enabled
 
 - name: Disable apt maintenance timer when not wanted
   ansible.builtin.systemd_service:
@@ -104,7 +104,7 @@
     enabled: false
     state: stopped
   failed_when: false
-  when: not apt_maintenance_enabled
+  when: not base_apt_maintenance_enabled
 
 - name: Configure APT periodic settings
   ansible.builtin.copy:
@@ -113,8 +113,8 @@
     group: root
     mode: "0644"
     content: |
-      APT::Periodic::Update-Package-Lists "{{ '1' if workstation_enable_periodic_package_list_update else '0' }}";
-      APT::Periodic::Unattended-Upgrade "{{ '1' if workstation_enable_unattended_upgrades else '0' }}";
+      APT::Periodic::Update-Package-Lists "{{ '1' if base_workstation_enable_periodic_package_list_update else '0' }}";
+      APT::Periodic::Unattended-Upgrade "{{ '1' if base_workstation_enable_unattended_upgrades else '0' }}";
 
 - name: Configure unattended-upgrades allowed origins
   ansible.builtin.copy:
@@ -124,13 +124,13 @@
     mode: "0644"
     content: |
       Unattended-Upgrade::Origins-Pattern {
-      {% for pattern in unattended_upgrade_origins_patterns %}
+      {% for pattern in base_unattended_upgrade_origins_patterns %}
               "{{ pattern }}";
       {% endfor %}
       };
       Unattended-Upgrade::Automatic-Reboot "false";
       Unattended-Upgrade::Remove-Unused-Dependencies "true";
-  when: workstation_enable_unattended_upgrades
+  when: base_workstation_enable_unattended_upgrades
 
 - name: Create optional workstation users
   ansible.builtin.user:
@@ -139,4 +139,4 @@
     shell: "{{ item.shell | default('/bin/bash') }}"
     append: true
     state: present
-  loop: "{{ workstation_extra_users }}"
+  loop: "{{ base_workstation_extra_users }}"

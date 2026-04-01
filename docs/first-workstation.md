@@ -21,7 +21,7 @@ Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/v
 Recommended shared baseline:
 
 - keep unattended upgrades enabled
-- keep `apt_maintenance_enabled: false`
+- keep `base_apt_maintenance_enabled: false`
 - keep optional packages minimal
 
 ## 3. Create a host-specific vars file only if this machine is special

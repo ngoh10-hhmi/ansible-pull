@@ -1,5 +1,5 @@
 ---
-workstation_base_packages:
+base_workstation_base_packages:
   - ca-certificates
   - curl
   - git
@@ -10,32 +10,32 @@ workstation_base_packages:
   - unattended-upgrades
   - wget
 
-workstation_optional_packages:
+base_workstation_optional_packages:
   - htop
   - tmux
   - vim
 
-workstation_extra_users: []
+base_workstation_extra_users: []
 
-ansible_pull_repo_url: "https://github.com/ngoh10-hhmi/ansible-pull.git"
-ansible_pull_branch: "main"
-ansible_pull_playbook: "playbooks/workstation.yml"
-ansible_pull_directory: "/var/lib/ansible-pull"
-ansible_pull_log_dir: "/var/log/ansible-pull"
-ansible_pull_timer_on_calendar: "daily"
-ansible_pull_randomized_delay_sec: "15m"
+base_ansible_pull_repo_url: "https://github.com/ngoh10-hhmi/ansible-pull.git"
+base_ansible_pull_branch: "main"
+base_ansible_pull_playbook: "playbooks/workstation.yml"
+base_ansible_pull_directory: "/var/lib/ansible-pull"
+base_ansible_pull_log_dir: "/var/log/ansible-pull"
+base_ansible_pull_timer_on_calendar: "daily"
+base_ansible_pull_randomized_delay_sec: "15m"
 
-apt_maintenance_enabled: false
-apt_maintenance_timer_on_calendar: "Sat *-*-* 03:00:00"
+base_apt_maintenance_enabled: false
+base_apt_maintenance_timer_on_calendar: "Sat *-*-* 03:00:00"
 
-workstation_enable_unattended_upgrades: true
-workstation_enable_periodic_package_list_update: true
+base_workstation_enable_unattended_upgrades: true
+base_workstation_enable_periodic_package_list_update: true
 
-unattended_upgrade_origins_patterns:
+base_unattended_upgrade_origins_patterns:
   - 'origin=Ubuntu,archive=${distro_codename}-security'
   - 'origin=Ubuntu,archive=${distro_codename}-updates'
 
-security_focus_notes:
+base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
   - "Packages installed from APT repositories can be updated automatically."
   - "Firefox on modern Ubuntu is typically a snap and is not managed by these APT tasks."

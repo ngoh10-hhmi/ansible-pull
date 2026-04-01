@@ -1,3 +1,5 @@
 *.retry
 .ansible/
 .DS_Store
+.cache/
+.venv/
