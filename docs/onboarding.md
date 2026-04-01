@@ -1,10 +1,8 @@
 # Onboarding a New Ubuntu Workstation
 
-## 1. Add host-specific variables if needed
+## 1. Set the shared baseline
 
-Create:
-
-`inventory/host_vars/<hostname>.yml`
+Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for settings that should apply to every Ubuntu workstation.
 
 Example:
 
@@ -13,7 +11,6 @@ workstation_base_packages:
   - ca-certificates
   - curl
   - git
-  - openssh-server
   - python3
   - python3-apt
   - rsync
@@ -26,9 +23,25 @@ workstation_optional_packages:
   - vim
 ```
 
+## 2. Add host-specific variables only if needed
+
+Create:
+
+`inventory/host_vars/<hostname>.yml`
+
+Example:
+
+```yaml
+workstation_base_packages:
+  - openssh-server
+
+workstation_optional_packages:
+  - tailscale
+```
+
 If a machine needs no special settings yet, you can skip this.
 
-## 2. Decide how the machine will read the repo
+## 3. Decide how the machine will read the repo
 
 Preferred order:
 
@@ -38,11 +51,11 @@ Preferred order:
 
 For your current plan, use a public HTTPS repo and no GitHub credential at all.
 
-## 3. Copy bootstrap files to the machine
+## 4. Copy bootstrap files to the machine
 
 You only need [bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh). It performs the initial clone itself.
 
-## 4. Bootstrap
+## 5. Bootstrap
 
 Run:
 
@@ -56,7 +69,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
 
-## 5. Verify
+## 6. Verify
 
 Check:
 
@@ -66,7 +79,7 @@ systemctl list-timers ansible-pull.timer
 tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
 
-## 6. Ongoing workflow
+## 7. Ongoing workflow
 
 - Make repo changes in Git
 - Merge to `main`

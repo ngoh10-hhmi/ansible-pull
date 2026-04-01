@@ -9,6 +9,7 @@ The default docs below assume you are starting with a public GitHub repo.
 
 - A simple `ansible-pull` bootstrap path for a brand new Ubuntu machine
 - A base workstation role with security-first Ubuntu update defaults
+- A shared baseline file for every machine, with optional per-host overrides
 - A scheduled `systemd` timer so machines keep themselves updated from Git
 - A place for host-specific settings in `inventory/host_vars/`
 - Documentation for GitHub-hosted vs internally hosted Git repos
@@ -28,9 +29,10 @@ If you are new to Ansible, start here:
 
 1. Keep one Git repo for all workstation config.
 2. Use a single base playbook for every Ubuntu workstation.
-3. Put host overrides in `inventory/host_vars/<hostname>.yml`.
-4. Start with a public HTTPS repo if the contents are safe to expose.
-5. Let Ubuntu handle security updates locally, and use `ansible-pull` mainly to keep policy consistent.
+3. Put shared settings in `vars/baseline.yml`.
+4. Use `inventory/host_vars/<hostname>.yml` only for exceptions.
+5. Start with a public HTTPS repo if the contents are safe to expose.
+6. Let Ubuntu handle security updates locally, and use `ansible-pull` mainly to keep policy consistent.
 
 That avoids having to stand up a full Ansible control node on day one.
 
@@ -38,9 +40,10 @@ That avoids having to stand up a full Ansible control node on day one.
 
 - `ansible.cfg`: local Ansible defaults
 - `playbooks/workstation.yml`: main workstation playbook
+- `vars/baseline.yml`: shared settings for every Ubuntu workstation
 - `roles/base/`: baseline Ubuntu workstation configuration
 - `inventory/hosts.yml`: local inventory used by `ansible-pull`
-- `inventory/host_vars/`: per-host overrides
+- `inventory/host_vars/`: optional per-host overrides
 - `scripts/bootstrap-ubuntu.sh`: first-run setup for a new Ubuntu machine
 - `scripts/run-ansible-pull.sh`: wrapper used by `systemd`
 - `scripts/apt-maintenance.sh`: optional full-upgrade helper for non-security maintenance
@@ -63,11 +66,9 @@ The bootstrap script now performs the initial clone itself, so you only need thi
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 
-## Host-specific configuration
+## Shared baseline
 
-Create a file named after the machine hostname:
-
-`inventory/host_vars/laptop-01.yml`
+Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for settings that should apply to every workstation.
 
 Example:
 
@@ -76,7 +77,6 @@ workstation_base_packages:
   - ca-certificates
   - curl
   - git
-  - openssh-server
   - python3
   - python3-apt
   - rsync
@@ -87,6 +87,23 @@ workstation_base_packages:
 workstation_optional_packages:
   - htop
   - vim
+```
+
+## Optional host-specific configuration
+
+Create a file named after the machine hostname:
+
+`inventory/host_vars/laptop-01.yml`
+
+Example:
+
+```yaml
+workstation_optional_packages:
+  - htop
+  - vim
+
+workstation_base_packages:
+  - openssh-server
 
 apt_maintenance_enabled: false
 ```
@@ -100,7 +117,7 @@ By default this repo is aimed at:
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
 
-The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `workstation_optional_packages` so you can trim them per host if you want a stricter baseline.
+The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `workstation_optional_packages`, and `vars/baseline.yml` is now the main place to adjust the shared fleet baseline.
 
 Important caveat:
 

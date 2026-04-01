@@ -4,6 +4,10 @@
   connection: local
   become: true
   pre_tasks:
+    - name: Load shared workstation baseline variables
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../vars/baseline.yml"
+
     - name: Check for host-specific variable files
       ansible.builtin.stat:
         path: "{{ item }}"

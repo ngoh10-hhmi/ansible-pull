@@ -14,9 +14,21 @@ hostname -s
 
 Assume the result is `ubuntu-test-laptop`.
 
-## 2. Create the host-specific vars file in this repo
+## 2. Set the shared baseline in this repo
 
-Copy the example file:
+Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for what every Ubuntu workstation should get.
+
+Recommended shared baseline:
+
+- keep unattended upgrades enabled
+- keep `apt_maintenance_enabled: false`
+- keep optional packages minimal
+
+## 3. Create a host-specific vars file only if this machine is special
+
+If the machine can stay on the shared baseline, skip this section.
+
+If it needs exceptions, copy the example file:
 
 ```bash
 cp inventory/host_vars/ubuntu-test-laptop.yml.example inventory/host_vars/ubuntu-test-laptop.yml
@@ -24,24 +36,23 @@ cp inventory/host_vars/ubuntu-test-laptop.yml.example inventory/host_vars/ubuntu
 
 Then edit it to match what you want on that machine.
 
-Recommended first test scope:
+- Example exception cases:
 
-- keep unattended upgrades enabled
-- keep `apt_maintenance_enabled: false`
 - include `openssh-server` only if that machine should accept SSH
-- keep optional packages minimal
+- add one-off packages like `tailscale`
+- override optional package choices on a single host
 
-## 3. Commit and push the host file
+## 4. Commit and push the baseline change, plus any host file if needed
 
 From this repo:
 
 ```bash
-git add inventory/host_vars/ubuntu-test-laptop.yml
-git commit -m "Add first workstation host vars"
+git add vars/baseline.yml inventory/host_vars/ubuntu-test-laptop.yml
+git commit -m "Set workstation baseline"
 git push
 ```
 
-## 4. Bootstrap the Ubuntu machine
+## 5. Bootstrap the Ubuntu machine
 
 On the Ubuntu machine:
 
@@ -55,7 +66,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 
 The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper, runs the playbook once, and enables the timer.
 
-## 5. Verify the first run
+## 6. Verify the first run
 
 Check the timer:
 
@@ -77,7 +88,7 @@ cat /etc/apt/apt.conf.d/20auto-upgrades
 cat /etc/apt/apt.conf.d/52ansible-unattended-upgrades
 ```
 
-## 6. Force another run after a repo change
+## 7. Force another run after a repo change
 
 After you change the repo and push:
 
@@ -85,8 +96,9 @@ After you change the repo and push:
 sudo /usr/local/sbin/run-ansible-pull
 ```
 
-## 7. What to watch for
+## 8. What to watch for
 
+- If you do not create a host file, the machine will use only the shared baseline.
 - If the host file name does not match `hostname -s`, host-specific vars will not load.
 - If the machine uses Firefox as a snap, browser updates are not controlled by the current APT tasks.
 - If you do not want inbound SSH, remove `openssh-server` from the host file.
