@@ -22,7 +22,7 @@ Recommended shared baseline:
 
 - keep unattended upgrades enabled
 - keep `base_apt_maintenance_enabled: false`
-- keep optional packages minimal
+- keep the shared package list small and intentional
 
 ## 3. Create a host-specific vars file only if this machine is special
 
@@ -40,15 +40,13 @@ Then edit it to match what you want on that machine.
 
 - include `openssh-server` only if that machine should accept SSH
 - add one-off packages like `tailscale`
-- override optional package choices on a single host
+- add one-off admin tools on a single host
 
 Preferred host override style:
 
 ```yaml
 base_workstation_extra_packages:
   - openssh-server
-
-base_workstation_extra_optional_packages:
   - tailscale
 ```
 

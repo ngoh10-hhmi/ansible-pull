@@ -9,15 +9,17 @@ base_workstation_base_packages:
   - sudo
   - unattended-upgrades
   - wget
-
-base_workstation_extra_packages: []
-
-base_workstation_optional_packages:
-  - htop
-  - tmux
+  - sssd
+  - sssd-common
+  - sssd-tools
+  - openssh-server
+  - nfs-client
+  - adcli
+  - realmd
+  - krb5-user
+  - cifs-utils
   - vim
-
-base_workstation_extra_optional_packages: []
+base_workstation_extra_packages: []
 
 base_apt_maintenance_enabled: false
 base_workstation_enable_unattended_upgrades: true

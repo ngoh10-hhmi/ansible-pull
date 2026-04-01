@@ -85,12 +85,6 @@ base_workstation_base_packages:
   - wget
 
 base_workstation_extra_packages: []
-
-base_workstation_optional_packages:
-  - htop
-  - vim
-
-base_workstation_extra_optional_packages: []
 ```
 
 ## Optional host-specific configuration
@@ -104,12 +98,9 @@ Example:
 ```yaml
 base_workstation_extra_packages:
   - openssh-server
-
-base_workstation_extra_optional_packages:
-  - tailscale
 ```
 
-Use `base_workstation_extra_packages` to add required packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
+Use `base_workstation_extra_packages` to add packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
 
 ## What gets updated automatically
 
@@ -120,7 +111,7 @@ By default this repo is aimed at:
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
 
-The default base package list is intentionally small. Convenience tools like `htop`, `tmux`, and `vim` live in `base_workstation_optional_packages`, and `vars/baseline.yml` is now the main place to adjust the shared fleet baseline.
+The shared package list in `vars/baseline.yml` is now the main place to define what every workstation should have. Host files should usually only use `base_workstation_extra_packages` for one-off additions.
 
 Important caveat:
 

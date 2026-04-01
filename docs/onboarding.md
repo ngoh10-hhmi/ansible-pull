@@ -19,12 +19,6 @@ base_workstation_base_packages:
   - wget
 
 base_workstation_extra_packages: []
-
-base_workstation_optional_packages:
-  - htop
-  - vim
-
-base_workstation_extra_optional_packages: []
 ```
 
 ## 2. Add host-specific variables only if needed
@@ -38,9 +32,6 @@ Example:
 ```yaml
 base_workstation_extra_packages:
   - openssh-server
-
-base_workstation_extra_optional_packages:
-  - tailscale
 ```
 
 If a machine needs no special settings yet, you can skip this.

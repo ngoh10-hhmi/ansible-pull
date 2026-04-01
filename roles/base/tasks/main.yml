@@ -5,8 +5,6 @@
       {{
         base_workstation_base_packages
         + base_workstation_extra_packages
-        + base_workstation_optional_packages
-        + base_workstation_extra_optional_packages
       }}
     state: present
     update_cache: true
