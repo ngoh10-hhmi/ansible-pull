@@ -10,10 +10,14 @@ base_workstation_base_packages:
   - unattended-upgrades
   - wget
 
+base_workstation_extra_packages: []
+
 base_workstation_optional_packages:
   - htop
   - tmux
   - vim
+
+base_workstation_extra_optional_packages: []
 
 base_apt_maintenance_enabled: false
 base_workstation_enable_unattended_upgrades: true

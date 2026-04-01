@@ -42,6 +42,18 @@ Then edit it to match what you want on that machine.
 - add one-off packages like `tailscale`
 - override optional package choices on a single host
 
+Preferred host override style:
+
+```yaml
+base_workstation_extra_packages:
+  - openssh-server
+
+base_workstation_extra_optional_packages:
+  - tailscale
+```
+
+That appends packages to the shared baseline instead of replacing the whole list.
+
 ## 4. Commit and push the baseline change, plus any host file if needed
 
 From this repo:

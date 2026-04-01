@@ -84,9 +84,13 @@ base_workstation_base_packages:
   - unattended-upgrades
   - wget
 
+base_workstation_extra_packages: []
+
 base_workstation_optional_packages:
   - htop
   - vim
+
+base_workstation_extra_optional_packages: []
 ```
 
 ## Optional host-specific configuration
@@ -98,15 +102,14 @@ Create a file named after the machine hostname:
 Example:
 
 ```yaml
-base_workstation_optional_packages:
-  - htop
-  - vim
-
-base_workstation_base_packages:
+base_workstation_extra_packages:
   - openssh-server
 
-base_apt_maintenance_enabled: false
+base_workstation_extra_optional_packages:
+  - tailscale
 ```
+
+Use `base_workstation_extra_packages` to add required packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
 
 ## What gets updated automatically
 
