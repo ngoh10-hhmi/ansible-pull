@@ -26,13 +26,13 @@ base_apt_maintenance_enabled: false
 base_apt_maintenance_timer_on_calendar: "Sat *-*-* 03:00:00"
 
 base_workstation_enable_unattended_upgrades: true
-base_workstation_enable_periodic_package_list_update: true
+base_workstation_update_package_lists_days: 30
+base_workstation_unattended_upgrade_days: 30
 
 base_unattended_upgrade_origins_patterns:
   - 'origin=Ubuntu,archive=${distro_codename}-security'
-  - 'origin=Ubuntu,archive=${distro_codename}-updates'
 
 base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
-  - "Packages installed from APT repositories can be updated automatically."
+  - "Only Ubuntu security updates are allowed for unattended upgrades."
   - "Firefox on modern Ubuntu is typically a snap and is not managed by these APT tasks."

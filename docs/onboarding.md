@@ -84,11 +84,10 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ## What this setup updates
 
 - Ubuntu security updates
-- Ubuntu `-updates` packages
 - APT-managed packages like `openssh-server`
 - Optional non-security package upgrades if you enable `base_apt_maintenance_enabled`
 
-This does not automatically manage snap refresh policy.
+By default, unattended upgrades are security-only and are configured to run every 30 days. This does not automatically manage snap refresh policy.
 
 ## Private repo later
 

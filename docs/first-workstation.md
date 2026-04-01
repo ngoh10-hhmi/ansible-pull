@@ -23,6 +23,9 @@ Recommended shared baseline:
 - keep unattended upgrades enabled
 - keep `base_apt_maintenance_enabled: false`
 - keep the shared package list small and intentional
+- keep unattended upgrades security-only
+- keep `base_workstation_update_package_lists_days: 30`
+- keep `base_workstation_unattended_upgrade_days: 30`
 
 ## 3. Create a host-specific vars file only if this machine is special
 

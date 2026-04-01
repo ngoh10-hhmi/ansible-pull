@@ -23,4 +23,5 @@ base_workstation_extra_packages: []
 
 base_apt_maintenance_enabled: false
 base_workstation_enable_unattended_upgrades: true
-base_workstation_enable_periodic_package_list_update: true
+base_workstation_update_package_lists_days: 30
+base_workstation_unattended_upgrade_days: 30

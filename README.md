@@ -107,11 +107,11 @@ Use `base_workstation_extra_packages` to add packages on one host without replac
 By default this repo is aimed at:
 
 - Ubuntu security updates through `unattended-upgrades`
-- Ubuntu updates from the `-updates` pocket
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
 
 The shared package list in `vars/baseline.yml` is now the main place to define what every workstation should have. Host files should usually only use `base_workstation_extra_packages` for one-off additions.
+Unattended upgrades are configured for security updates only, with a 30-day interval for package list refresh and unattended upgrade execution.
 
 Important caveat:
 

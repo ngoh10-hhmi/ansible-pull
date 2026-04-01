@@ -117,8 +117,8 @@
     group: root
     mode: "0644"
     content: |
-      APT::Periodic::Update-Package-Lists "{{ '1' if base_workstation_enable_periodic_package_list_update else '0' }}";
-      APT::Periodic::Unattended-Upgrade "{{ '1' if base_workstation_enable_unattended_upgrades else '0' }}";
+      APT::Periodic::Update-Package-Lists "{{ base_workstation_update_package_lists_days }}";
+      APT::Periodic::Unattended-Upgrade "{{ base_workstation_unattended_upgrade_days if base_workstation_enable_unattended_upgrades else '0' }}";
 
 - name: Configure unattended-upgrades allowed origins
   ansible.builtin.copy:
