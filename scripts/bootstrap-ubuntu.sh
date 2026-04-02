@@ -212,7 +212,13 @@ if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
   fi
 
   echo "Obtaining Kerberos ticket for ${AD_USER}@HHMI.ORG"
-  kinit "${AD_USER}@HHMI.ORG"
+  while true; do
+    if kinit "${AD_USER}@HHMI.ORG"; then
+      break
+    fi
+
+    echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
+  done
 
   cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
 target_hostname: ${SHORT_HOSTNAME}
