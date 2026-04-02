@@ -187,11 +187,18 @@ while true; do
   fi
 done
 
+cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
+target_hostname: ${SHORT_HOSTNAME}
+machine_type: ${MACHINE_TYPE}
+base_ad_enroll: false
+EOF
+
+chmod 0600 "${BOOTSTRAP_VARS_FILE}"
+
+/usr/local/sbin/run-ansible-pull
+
 read -p "Join AD domain hhmi.org now? (y/n): " DO_JOIN
-AD_ENROLL="false"
-AD_USER=""
 if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
-  AD_ENROLL="true"
   read -p "AD Admin Username (e.g. duckd-a): " AD_USER
 
   if [[ -z "${AD_USER}" ]]; then
@@ -199,25 +206,25 @@ if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
     exit 1
   fi
 
+  if ! command -v kinit >/dev/null 2>&1; then
+    echo "Error: kinit was not found after baseline setup. Verify krb5-user is installed." >&2
+    exit 1
+  fi
+
   echo "Obtaining Kerberos ticket for ${AD_USER}@HHMI.ORG"
   kinit "${AD_USER}@HHMI.ORG"
-fi
 
-cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
+  cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
 target_hostname: ${SHORT_HOSTNAME}
 machine_type: ${MACHINE_TYPE}
-base_ad_enroll: ${AD_ENROLL}
-EOF
-
-if [[ -n "${AD_USER}" ]]; then
-  cat >> "${BOOTSTRAP_VARS_FILE}" <<EOF
+base_ad_enroll: true
 ad_join_user: ${AD_USER}
 EOF
+
+  chmod 0600 "${BOOTSTRAP_VARS_FILE}"
+
+  /usr/local/sbin/run-ansible-pull
 fi
-
-chmod 0600 "${BOOTSTRAP_VARS_FILE}"
-
-/usr/local/sbin/run-ansible-pull
 
 systemctl enable --now ansible-pull.timer || true
 
