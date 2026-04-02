@@ -1,7 +1,7 @@
 ---
 - name: Check if already joined to AD
   ansible.builtin.command: realm list
-  register: realm_list_output
+  register: base_realm_list_output
   changed_when: false
 
 - name: Set hostname correctly
@@ -17,7 +17,7 @@
 
 - name: Enable mkhomedir via pam-auth-update
   ansible.builtin.command: pam-auth-update --enable mkhomedir
-  register: pam_auth_out
+  register: base_pam_auth_out
   changed_when: false
   failed_when: false
 
@@ -39,7 +39,7 @@
   when:
     - ad_join_user is defined
     - ad_join_password is defined
-    - "'hhmi.org' not in realm_list_output.stdout"
+    - "'hhmi.org' not in base_realm_list_output.stdout"
 
 - name: Deploy SSSD Configuration
   ansible.builtin.template:
