@@ -4,6 +4,17 @@
   register: base_realm_list_output
   changed_when: false
 
+- name: Require AD join user when enrollment is enabled
+  ansible.builtin.assert:
+    that:
+      - target_hostname is defined
+      - target_hostname | length > 0
+      - machine_type is defined
+      - machine_type in ['desktop', 'laptop']
+      - ad_join_user is defined
+      - ad_join_user | length > 0
+    fail_msg: "Set target_hostname, machine_type, and ad_join_user when base_ad_enroll is true."
+
 - name: Set hostname correctly
   ansible.builtin.hostname:
     name: "{{ target_hostname | default(ansible_facts['hostname']) }}.hhmi.org"
@@ -29,16 +40,17 @@
     insertafter: '^\[General\]'
 
 - name: Perform Interactive realm join
-  ansible.builtin.shell: |
-    set -o pipefail
-    echo "{{ ad_join_password }}" | realm join -U "{{ ad_join_user }}" --automatic-id-mapping=no hhmi.org
-  args:
-    executable: /bin/bash
-  no_log: true
+  ansible.builtin.command:
+    argv:
+      - realm
+      - join
+      - -U
+      - "{{ ad_join_user }}"
+      - --automatic-id-mapping=no
+      - hhmi.org
   changed_when: true
   when:
     - ad_join_user is defined
-    - ad_join_password is defined
     - "'hhmi.org' not in base_realm_list_output.stdout"
 
 - name: Deploy SSSD Configuration

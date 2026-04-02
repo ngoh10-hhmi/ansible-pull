@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ENV_FILE="/etc/ansible/pull.env"
+BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "Missing ${ENV_FILE}" >&2
@@ -19,6 +20,15 @@ HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
 RUN_LOG="${LOG_DIR}/ansible-pull-${HOSTNAME_SHORT}.log"
 RUNTIME_INVENTORY="/etc/ansible/pull-inventory.yml"
 LOCK_FILE="/var/lock/ansible-pull.lock"
+PLAYBOOK_ARGS=(
+  --inventory "${RUNTIME_INVENTORY}"
+  --limit localhost
+  -e ansible_python_interpreter=/usr/bin/python3
+)
+
+if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
+  PLAYBOOK_ARGS+=(--extra-vars "@${BOOTSTRAP_VARS_FILE}")
+fi
 
 cat > "${RUNTIME_INVENTORY}" <<EOF
 all:
@@ -59,8 +69,6 @@ fi
   cd "${DEST}"
 
   /usr/bin/ansible-playbook \
-    --inventory "${RUNTIME_INVENTORY}" \
-    --limit localhost \
-    -e ansible_python_interpreter=/usr/bin/python3 \
+    "${PLAYBOOK_ARGS[@]}" \
     "${PLAYBOOK}" "$@"
 } >> "${RUN_LOG}" 2>&1

@@ -19,6 +19,9 @@ Private repo later:
     --branch main \
     --github-user machine-reader \
     --github-token-file /root/github-read-token.txt
+
+If you choose Active Directory enrollment during bootstrap, the script will
+prompt for an AD username and run kinit interactively before ansible-pull.
 EOF
 }
 
@@ -27,6 +30,7 @@ BRANCH="main"
 PLAYBOOK="playbooks/workstation.yml"
 DEST="/var/lib/ansible-pull"
 LOG_DIR="/var/log/ansible-pull"
+BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
 GITHUB_USER=""
 GITHUB_TOKEN=""
 GITHUB_TOKEN_FILE=""
@@ -156,8 +160,15 @@ fi
 install -m 0755 "${DEST}/scripts/run-ansible-pull.sh" /usr/local/sbin/run-ansible-pull
 
 echo "--- Initial Workstation Config ---"
+CURRENT_SHORT_HOSTNAME="$(hostname -s 2>/dev/null || true)"
 while true; do
-  read -p "Enter short hostname (max 15 chars, without .hhmi.org): " SHORT_HOSTNAME
+  if [[ -n "${CURRENT_SHORT_HOSTNAME}" ]]; then
+    read -p "Enter short hostname (max 15 chars, without .hhmi.org) [${CURRENT_SHORT_HOSTNAME}]: " SHORT_HOSTNAME
+    SHORT_HOSTNAME="${SHORT_HOSTNAME:-${CURRENT_SHORT_HOSTNAME}}"
+  else
+    read -p "Enter short hostname (max 15 chars, without .hhmi.org): " SHORT_HOSTNAME
+  fi
+
   if [[ ${#SHORT_HOSTNAME} -gt 15 ]]; then
     echo "Error: Hostname exceeds 15 characters. Please try again."
   elif [[ -z "${SHORT_HOSTNAME}" ]]; then
@@ -177,22 +188,36 @@ while true; do
 done
 
 read -p "Join AD domain hhmi.org now? (y/n): " DO_JOIN
+AD_ENROLL="false"
 AD_USER=""
-AD_PASSWORD=""
 if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
+  AD_ENROLL="true"
   read -p "AD Admin Username (e.g. duckd-a): " AD_USER
-  read -s -p "AD Admin Password: " AD_PASSWORD
-  echo ""
+
+  if [[ -z "${AD_USER}" ]]; then
+    echo "Error: AD username cannot be empty when enrolling." >&2
+    exit 1
+  fi
+
+  echo "Obtaining Kerberos ticket for ${AD_USER}@HHMI.ORG"
+  kinit "${AD_USER}@HHMI.ORG"
 fi
 
-# Ensure extra-vars is quoted securely since it contains passwords
-EXTRA_VARS="{ \"target_hostname\": \"${SHORT_HOSTNAME}\", \"machine_type\": \"${MACHINE_TYPE}\""
+cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
+target_hostname: ${SHORT_HOSTNAME}
+machine_type: ${MACHINE_TYPE}
+base_ad_enroll: ${AD_ENROLL}
+EOF
+
 if [[ -n "${AD_USER}" ]]; then
-  EXTRA_VARS="${EXTRA_VARS}, \"ad_join_user\": \"${AD_USER}\", \"ad_join_password\": \"${AD_PASSWORD}\""
+  cat >> "${BOOTSTRAP_VARS_FILE}" <<EOF
+ad_join_user: ${AD_USER}
+EOF
 fi
-EXTRA_VARS="${EXTRA_VARS} }"
 
-/usr/local/sbin/run-ansible-pull --extra-vars "${EXTRA_VARS}"
+chmod 0600 "${BOOTSTRAP_VARS_FILE}"
+
+/usr/local/sbin/run-ansible-pull
 
 systemctl enable --now ansible-pull.timer || true
 

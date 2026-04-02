@@ -179,3 +179,4 @@
 
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
+  when: base_ad_enroll | bool
