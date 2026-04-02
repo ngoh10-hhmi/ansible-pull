@@ -13,7 +13,7 @@ base_workstation_base_packages:
   - sssd-common
   - sssd-tools
   - openssh-server
-  - nfs-client
+  - nfs-common
   - adcli
   - realmd
   - krb5-user
@@ -22,7 +22,7 @@ base_workstation_base_packages:
 base_workstation_extra_packages: []
 
 base_workstation_ppas: []
-base_workstation_apt_repos:
+base_workstation_apt_repos: []
   # Examples (uncomment to use):
   # - name: google-chrome
   #   key_url: "https://dl.google.com/linux/linux_signing_key.pub"

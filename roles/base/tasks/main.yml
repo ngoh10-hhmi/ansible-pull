@@ -14,7 +14,7 @@
     owner: root
     group: root
     mode: "0644"
-  loop: "{{ base_workstation_apt_repos }}"
+  loop: "{{ base_workstation_apt_repos | default([]) }}"
   when: item.key_url is defined
 
 - name: Add external APT repositories
@@ -22,14 +22,14 @@
     repo: "{{ item.repo }}"
     state: present
     update_cache: false
-  loop: "{{ base_workstation_apt_repos }}"
+  loop: "{{ base_workstation_apt_repos | default([]) }}"
 
 - name: Add Ubuntu PPAs
   ansible.builtin.apt_repository:
     repo: "{{ item }}"
     state: present
     update_cache: false
-  loop: "{{ base_workstation_ppas }}"
+  loop: "{{ base_workstation_ppas | default([]) }}"
 
 - name: Install base Ubuntu packages
   ansible.builtin.apt:
