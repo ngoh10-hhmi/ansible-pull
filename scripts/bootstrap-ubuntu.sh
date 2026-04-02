@@ -236,3 +236,7 @@ if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
   echo "Please reboot your machine when ready: sudo reboot"
   echo "******************************************************************"
 fi
+
+echo "Running final package upgrade"
+apt-get update
+apt-get upgrade -y
