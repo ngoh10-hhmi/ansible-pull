@@ -30,8 +30,12 @@
 
 - name: Perform Interactive realm join
   ansible.builtin.shell: |
+    set -o pipefail
     echo "{{ ad_join_password }}" | realm join -U "{{ ad_join_user }}" --automatic-id-mapping=no hhmi.org
+  args:
+    executable: /bin/bash
   no_log: true
+  changed_when: true
   when:
     - ad_join_user is defined
     - ad_join_password is defined
