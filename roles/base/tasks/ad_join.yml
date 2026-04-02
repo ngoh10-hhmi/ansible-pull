@@ -4,16 +4,14 @@
   register: base_realm_list_output
   changed_when: false
 
-- name: Require AD join user when enrollment is enabled
+- name: Require AD enrollment settings
   ansible.builtin.assert:
     that:
       - target_hostname is defined
       - target_hostname | length > 0
       - machine_type is defined
       - machine_type in ['desktop', 'laptop']
-      - ad_join_user is defined
-      - ad_join_user | length > 0
-    fail_msg: "Set target_hostname, machine_type, and ad_join_user when base_ad_enroll is true."
+    fail_msg: "Set target_hostname and machine_type when base_ad_enroll is true."
 
 - name: Set hostname correctly
   ansible.builtin.hostname:
@@ -32,26 +30,27 @@
   changed_when: false
   failed_when: false
 
+- name: Require an active Kerberos ticket before domain join
+  ansible.builtin.command: klist -s
+  changed_when: false
+  when: "'hhmi.org' not in base_realm_list_output.stdout"
+
+- name: Join AD realm using existing Kerberos credentials
+  ansible.builtin.command:
+    argv:
+      - realm
+      - join
+      - --automatic-id-mapping=no
+      - hhmi.org
+  changed_when: true
+  when: "'hhmi.org' not in base_realm_list_output.stdout"
+
 - name: Configure idmapd.conf
   ansible.builtin.lineinfile:
     path: /etc/idmapd.conf
     regexp: '^#?Domain\s*='
     line: 'Domain = hhmi.org'
     insertafter: '^\[General\]'
-
-- name: Perform Interactive realm join
-  ansible.builtin.command:
-    argv:
-      - realm
-      - join
-      - -U
-      - "{{ ad_join_user }}"
-      - --automatic-id-mapping=no
-      - hhmi.org
-  changed_when: true
-  when:
-    - ad_join_user is defined
-    - "'hhmi.org' not in base_realm_list_output.stdout"
 
 - name: Deploy SSSD Configuration
   ansible.builtin.template:
