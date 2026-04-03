@@ -103,6 +103,7 @@ validate_prerequisites() {
     die "Cannot detect operating system."
   fi
 
+  # shellcheck source=/etc/os-release
   source /etc/os-release
 
   if [[ "${ID:-}" != "ubuntu" ]]; then
