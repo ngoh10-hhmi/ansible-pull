@@ -193,7 +193,7 @@
     name: "{{ item }}"
     groups: sudo
     append: true
-  loop: "{{ local_sudo_users }}"
+  loop: "{{ base_local_sudo_users }}"
 
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
