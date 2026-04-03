@@ -188,6 +188,13 @@
     state: present
   loop: "{{ base_workstation_extra_users }}"
 
+- name: Add local users to sudo group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: sudo
+    append: true
+  loop: "{{ local_sudo_users }}"
+
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool

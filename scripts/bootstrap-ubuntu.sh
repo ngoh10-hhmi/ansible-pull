@@ -21,6 +21,9 @@ Private repo later:
     --github-user machine-reader \
     --github-token-file /root/github-read-token.txt
 
+The script can also prompt for local users that should be added to the sudo
+group during bootstrap.
+
 If you choose Active Directory enrollment during bootstrap, the script will
 prompt for an AD username and run kinit interactively before ansible-pull.
 EOF
@@ -45,6 +48,7 @@ GITHUB_TOKEN_FILE=""
 SHORT_HOSTNAME=""
 MACHINE_TYPE=""
 DO_JOIN=""
+LOCAL_SUDO_USERS=()
 
 # Parse CLI arguments into global script settings.
 parse_args() {
@@ -226,6 +230,27 @@ prompt_machine_identity() {
       echo "Error: Please enter either 'laptop' or 'desktop'."
     fi
   done
+
+  prompt_local_sudo_users
+}
+
+# Prompt for optional local users that should be granted sudo access.
+prompt_local_sudo_users() {
+  local sudo_users_input
+  local sanitized_input
+  local user_name
+
+  read -r -p "Local users to add to sudo (comma-separated, leave blank for none): " sudo_users_input
+
+  if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
+    return
+  fi
+
+  sanitized_input="${sudo_users_input//,/ }"
+
+  for user_name in ${sanitized_input}; do
+    LOCAL_SUDO_USERS+=("${user_name}")
+  done
 }
 
 # Persist bootstrap variables for Ansible.
@@ -234,6 +259,15 @@ prompt_machine_identity() {
 write_bootstrap_vars() {
   local ad_enabled="$1"
   local ad_user="${2:-}"
+  local sudo_user
+  local sudo_users_yaml=""
+
+  if [[ "${#LOCAL_SUDO_USERS[@]}" -gt 0 ]]; then
+    sudo_users_yaml="local_sudo_users:"
+    for sudo_user in "${LOCAL_SUDO_USERS[@]}"; do
+      sudo_users_yaml+=$'\n'"  - ${sudo_user}"
+    done
+  fi
 
   if [[ "${ad_enabled}" == "true" ]]; then
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
@@ -246,6 +280,7 @@ target_hostname: ${SHORT_HOSTNAME}
 machine_type: ${MACHINE_TYPE}
 base_ad_enroll: true
 ad_join_user: ${ad_user}
+${sudo_users_yaml}
 EOF
   else
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
@@ -257,6 +292,7 @@ base_ansible_pull_log_dir: ${LOG_DIR}
 target_hostname: ${SHORT_HOSTNAME}
 machine_type: ${MACHINE_TYPE}
 base_ad_enroll: false
+${sudo_users_yaml}
 EOF
   fi
 

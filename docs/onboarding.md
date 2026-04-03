@@ -63,6 +63,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
+The bootstrap prompts also let you nominate any existing local users that should be added to the `sudo` group.
 
 ## 6. Verify
 

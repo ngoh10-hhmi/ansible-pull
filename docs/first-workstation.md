@@ -77,6 +77,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper, runs the playbook once, and enables the timer.
+During bootstrap you can also enter a comma-separated list of existing local users that should be added to the `sudo` group.
 
 ## 6. Verify the first run
 

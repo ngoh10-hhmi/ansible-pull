@@ -72,11 +72,3 @@
       {% if ad_sudo_group is defined %}
       %{{ ad_sudo_group }} ALL=(ALL:ALL) ALL
       {% endif %}
-
-- name: Add local users to sudo group
-  ansible.builtin.user:
-    name: "{{ item }}"
-    groups: sudo
-    append: true
-  loop: "{{ local_sudo_users | default([]) }}"
-  when: local_sudo_users is defined

@@ -6,6 +6,7 @@ base_workstation_ppas: []
 base_workstation_apt_repos: []
 
 base_workstation_extra_users: []
+local_sudo_users: []
 base_ad_enroll: false
 
 base_ansible_pull_repo_url: "https://github.com/ngoh10-hhmi/ansible-pull.git"
