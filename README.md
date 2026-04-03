@@ -92,6 +92,13 @@ sudo /tmp/bootstrap-ubuntu.sh \
 
 The bootstrap flow now persists the selected repo/branch into Ansible variables, so scheduled runs on that test machine stay on `testing` unless you intentionally re-bootstrap or change `/etc/ansible/bootstrap-vars.yml`.
 
+To switch an existing machine between branches without re-bootstrap:
+
+```bash
+sudo /usr/local/sbin/switch-pull-branch --branch testing --run-now
+sudo /usr/local/sbin/switch-pull-branch --branch main --run-now
+```
+
 ## Shared baseline
 
 Edit [vars/baseline.yml](vars/baseline.yml) for settings that should apply to every workstation.

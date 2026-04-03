@@ -74,6 +74,14 @@
     group: root
     mode: "0755"
 
+- name: Install ansible-pull branch switch helper
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/switch-pull-branch.sh') }}"
+    dest: /usr/local/sbin/switch-pull-branch
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install apt maintenance helper
   ansible.builtin.copy:
     content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-maintenance.sh') }}"
