@@ -219,13 +219,20 @@ prompt_machine_identity() {
   done
 }
 
-# Persist bootstrap variables for Ansible, optionally enabling AD enrollment.
+# Persist bootstrap variables for Ansible.
+# This also pins repo/branch/playbook settings so role defaults do not
+# accidentally switch a test workstation back to main after first converge.
 write_bootstrap_vars() {
   local ad_enabled="$1"
   local ad_user="${2:-}"
 
   if [[ "${ad_enabled}" == "true" ]]; then
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
+base_ansible_pull_repo_url: ${REPO_URL}
+base_ansible_pull_branch: ${BRANCH}
+base_ansible_pull_playbook: ${PLAYBOOK}
+base_ansible_pull_directory: ${DEST}
+base_ansible_pull_log_dir: ${LOG_DIR}
 target_hostname: ${SHORT_HOSTNAME}
 machine_type: ${MACHINE_TYPE}
 base_ad_enroll: true
@@ -233,6 +240,11 @@ ad_join_user: ${ad_user}
 EOF
   else
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
+base_ansible_pull_repo_url: ${REPO_URL}
+base_ansible_pull_branch: ${BRANCH}
+base_ansible_pull_playbook: ${PLAYBOOK}
+base_ansible_pull_directory: ${DEST}
+base_ansible_pull_log_dir: ${LOG_DIR}
 target_hostname: ${SHORT_HOSTNAME}
 machine_type: ${MACHINE_TYPE}
 base_ad_enroll: false

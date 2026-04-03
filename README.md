@@ -67,6 +67,31 @@ The bootstrap script now performs the initial clone itself, so you only need thi
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 
+## Testing branch workflow
+
+Use a long-lived `testing` branch for workstation validation so you do not need to push experimental changes to `main`.
+
+Create the branch once:
+
+```bash
+git checkout main
+git pull
+git checkout -b testing
+git push -u origin testing
+```
+
+Bootstrap a test workstation against that branch:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ngoh10-hhmi/ansible-pull/testing/scripts/bootstrap-ubuntu.sh -o /tmp/bootstrap-ubuntu.sh
+chmod +x /tmp/bootstrap-ubuntu.sh
+sudo /tmp/bootstrap-ubuntu.sh \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
+  --branch testing
+```
+
+The bootstrap flow now persists the selected repo/branch into Ansible variables, so scheduled runs on that test machine stay on `testing` unless you intentionally re-bootstrap or change `/etc/ansible/bootstrap-vars.yml`.
+
 ## Shared baseline
 
 Edit [vars/baseline.yml](vars/baseline.yml) for settings that should apply to every workstation.
