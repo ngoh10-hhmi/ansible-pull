@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: yamllint
+        name: yamllint
+        entry: yamllint .
+        language: system
+        pass_filenames: false
+      - id: ansible-lint
+        name: ansible-lint
+        entry: ansible-lint playbooks/workstation.yml
+        language: system
+        pass_filenames: false
+      - id: ansible-syntax-check
+        name: ansible syntax check
+        entry: ansible-playbook --syntax-check --inventory inventory/hosts.yml playbooks/workstation.yml
+        language: system
+        pass_filenames: false
+      - id: shellcheck
+        name: shellcheck
+        entry: bash -lc 'shellcheck scripts/*.sh'
+        language: system
+        pass_filenames: false

@@ -1,2 +1,2 @@
 base_workstation_extra_packages:
-  - openssh-server
+  - htop

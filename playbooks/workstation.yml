@@ -1,25 +1,7 @@
 ---
 - name: Configure Ubuntu workstation
-  hosts: localhost
+  hosts: all
   connection: local
   become: true
-  pre_tasks:
-    - name: Load shared workstation baseline variables
-      ansible.builtin.include_vars:
-        file: "{{ playbook_dir }}/../vars/baseline.yml"
-
-    - name: Check for host-specific variable files
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - "{{ playbook_dir }}/../inventory/host_vars/{{ ansible_facts['hostname'] }}.yml"
-        - "{{ playbook_dir }}/../inventory/host_vars/{{ ansible_facts['fqdn'] }}.yml"
-      register: workstation_host_var_files
-
-    - name: Load host-specific variables when present
-      ansible.builtin.include_vars:
-        file: "{{ item.stat.path }}"
-      loop: "{{ workstation_host_var_files.results }}"
-      when: item.stat.exists
   roles:
     - role: base

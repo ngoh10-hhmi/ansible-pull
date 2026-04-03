@@ -16,7 +16,7 @@ Assume the result is `ubuntu-test-laptop`.
 
 ## 2. Set the shared baseline in this repo
 
-Edit [vars/baseline.yml](../vars/baseline.yml) for what every Ubuntu workstation should get.
+Edit [inventory/group_vars/all.yml](../inventory/group_vars/all.yml) for what every Ubuntu workstation should get.
 
 Recommended shared baseline:
 
@@ -41,7 +41,6 @@ Then edit it to match what you want on that machine.
 
 - Example exception cases:
 
-- include `openssh-server` only if that machine should accept SSH
 - add one-off packages like `tailscale`
 - add one-off admin tools on a single host
 
@@ -49,8 +48,8 @@ Preferred host override style:
 
 ```yaml
 base_workstation_extra_packages:
-  - openssh-server
-  - tailscale
+  - htop
+  - nload
 ```
 
 That appends packages to the shared baseline instead of replacing the whole list.
@@ -60,7 +59,7 @@ That appends packages to the shared baseline instead of replacing the whole list
 From this repo:
 
 ```bash
-git add vars/baseline.yml inventory/host_vars/ubuntu-test-laptop.yml
+git add inventory/group_vars/all.yml inventory/host_vars/ubuntu-test-laptop.yml
 git commit -m "Set workstation baseline"
 git push
 ```
@@ -114,4 +113,4 @@ sudo /usr/local/sbin/run-ansible-pull
 - If you do not create a host file, the machine will use only the shared baseline.
 - If the host file name does not match `hostname -s`, host-specific vars will not load.
 - If the machine uses Firefox as a snap, browser updates are not controlled by the current APT tasks.
-- If you do not want inbound SSH, remove `openssh-server` from the host file.
+- If you do not want inbound SSH on every workstation, move `openssh-server` out of `inventory/group_vars/all.yml` and add it back only on the hosts that need it.

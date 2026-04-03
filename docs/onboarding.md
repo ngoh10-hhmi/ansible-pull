@@ -2,7 +2,7 @@
 
 ## 1. Set the shared baseline
 
-Edit [vars/baseline.yml](../vars/baseline.yml) for settings that should apply to every Ubuntu workstation.
+Edit [inventory/group_vars/all.yml](../inventory/group_vars/all.yml) for settings that should apply to every Ubuntu workstation.
 
 Example:
 
@@ -31,7 +31,7 @@ Example:
 
 ```yaml
 base_workstation_extra_packages:
-  - openssh-server
+  - htop
 ```
 
 If a machine needs no special settings yet, you can skip this.
@@ -108,7 +108,7 @@ Using a token file is safer than passing the token directly on the command line.
 - Avoid managing everything at once
 - Keep secrets out of the repo
 - Prefer package install and security patching before deeper OS policy changes
-- Add CI before the repo gets large
+- Run `pre-commit` before pushing changes so local checks match CI
 
 See [docs/first-workstation.md](first-workstation.md) for the exact first-machine rollout.
 See [docs/targeted-package-updates.md](targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.

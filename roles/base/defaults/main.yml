@@ -1,15 +1,5 @@
 ---
-base_workstation_base_packages:
-  - ca-certificates
-  - curl
-  - git
-  - python3
-  - python3-apt
-  - rsync
-  - sudo
-  - unattended-upgrades
-  - wget
-
+base_workstation_base_packages: []
 base_workstation_extra_packages: []
 
 base_workstation_ppas: []

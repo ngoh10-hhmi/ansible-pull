@@ -29,7 +29,7 @@ If you are new to Ansible, start here:
 
 1. Keep one Git repo for all workstation config.
 2. Use a single base playbook for every Ubuntu workstation.
-3. Put shared settings in `vars/baseline.yml`.
+3. Put shared settings in `inventory/group_vars/all.yml`.
 4. Use `inventory/host_vars/<hostname>.yml` only for exceptions.
 5. Start with a public HTTPS repo if the contents are safe to expose.
 6. Let Ubuntu handle security updates locally, and use `ansible-pull` mainly to keep policy consistent.
@@ -40,7 +40,7 @@ That avoids having to stand up a full Ansible control node on day one.
 
 - `ansible.cfg`: local Ansible defaults
 - `playbooks/workstation.yml`: main workstation playbook
-- `vars/baseline.yml`: shared settings for every Ubuntu workstation
+- `inventory/group_vars/all.yml`: shared settings for every Ubuntu workstation
 - `roles/base/`: baseline Ubuntu workstation configuration
 - `inventory/hosts.yml`: local inventory used by `ansible-pull`
 - `inventory/host_vars/`: optional per-host overrides
@@ -101,7 +101,7 @@ sudo /usr/local/sbin/switch-pull-branch --branch main --run-now
 
 ## Shared baseline
 
-Edit [vars/baseline.yml](vars/baseline.yml) for settings that should apply to every workstation.
+Edit [inventory/group_vars/all.yml](inventory/group_vars/all.yml) for settings that should apply to every workstation.
 
 Example:
 
@@ -130,7 +130,7 @@ Example:
 
 ```yaml
 base_workstation_extra_packages:
-  - openssh-server
+  - htop
 ```
 
 Use `base_workstation_extra_packages` to add packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
@@ -143,7 +143,7 @@ By default this repo is aimed at:
 - APT-installed packages such as `openssh-server`
 - Any browser or other app installed from an APT repository you explicitly manage
 
-The shared package list in `vars/baseline.yml` is now the main place to define what every workstation should have. Host files should usually only use `base_workstation_extra_packages` for one-off additions.
+The shared package list in `inventory/group_vars/all.yml` is now the main place to define what every workstation should have. Host files should usually only use `base_workstation_extra_packages` for one-off additions.
 Unattended upgrades are configured for security updates only, with a 30-day interval for package list refresh and unattended upgrade execution.
 
 Important caveat:
@@ -175,5 +175,19 @@ At cutover time you would:
 ## Next improvements
 
 - Add browser repository management if you want Chrome or other vendor packages patched here
-- Add CI with `ansible-lint`
-- Replace bootstrap token entry with a more formal machine credential process later
+- Tighten private-repo credential handling so pull access is scoped per machine or per repo
+- Expand integration coverage for optional paths such as AD enrollment and third-party APT repositories
+
+## Local checks
+
+Install the pinned toolchain:
+
+```bash
+python -m pip install -r requirements-dev.txt
+```
+
+Run the same checks used in CI:
+
+```bash
+pre-commit run --all-files
+```

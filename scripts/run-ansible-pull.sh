@@ -11,6 +11,8 @@ HOSTNAME_FQDN=""
 RUN_LOG=""
 RUNTIME_INVENTORY=""
 LOCK_FILE=""
+TARGET_HOST=""
+ANSIBLE_PLAYBOOK_BIN=""
 PLAYBOOK_ARGS=()
 
 # Load configured pull settings from /etc/ansible/pull.env.
@@ -34,12 +36,21 @@ prepare_runtime_context() {
   HOSTNAME_SHORT="$(hostname -s)"
   HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
   RUN_LOG="${LOG_DIR}/ansible-pull-${HOSTNAME_SHORT}.log"
-  RUNTIME_INVENTORY="/etc/ansible/pull-inventory.yml"
+  RUNTIME_INVENTORY="${DEST}/inventory/runtime-hosts.yml"
   LOCK_FILE="/var/lock/ansible-pull.lock"
+  TARGET_HOST="${HOSTNAME_SHORT}"
+  ANSIBLE_PLAYBOOK_BIN="${ANSIBLE_PLAYBOOK_BIN:-$(command -v ansible-playbook || true)}"
 
+  if [[ -z "${ANSIBLE_PLAYBOOK_BIN}" ]]; then
+    echo "ansible-playbook was not found in PATH" >&2
+    exit 1
+  fi
+}
+
+build_playbook_args() {
   PLAYBOOK_ARGS=(
     --inventory "${RUNTIME_INVENTORY}"
-    --limit localhost
+    --limit "${TARGET_HOST}"
     -e ansible_python_interpreter=/usr/bin/python3
   )
 
@@ -50,6 +61,8 @@ prepare_runtime_context() {
 
 # Build a local inventory that can match localhost/hostname/FQDN host_vars.
 write_runtime_inventory() {
+  mkdir -p "$(dirname "${RUNTIME_INVENTORY}")"
+
   cat > "${RUNTIME_INVENTORY}" <<EOF
 all:
   hosts:
@@ -63,6 +76,15 @@ all:
       ansible_connection: local
       ansible_python_interpreter: /usr/bin/python3
 EOF
+}
+
+# Select the inventory host that should receive host_vars for this machine.
+select_target_host() {
+  if [[ -f "${DEST}/inventory/host_vars/${HOSTNAME_SHORT}.yml" ]]; then
+    TARGET_HOST="${HOSTNAME_SHORT}"
+  elif [[ -f "${DEST}/inventory/host_vars/${HOSTNAME_FQDN}.yml" ]]; then
+    TARGET_HOST="${HOSTNAME_FQDN}"
+  fi
 }
 
 # Prevent overlapping runs from timer/manual invocations.
@@ -81,9 +103,15 @@ acquire_lock_or_exit() {
 sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
     rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
-    git -C "${DEST}" fetch origin "${BRANCH}"
-    git -C "${DEST}" checkout "${BRANCH}"
+    if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
+      git -C "${DEST}" remote set-url origin "${REPO_URL}"
+    else
+      git -C "${DEST}" remote add origin "${REPO_URL}"
+    fi
+    git -C "${DEST}" fetch --prune origin "${BRANCH}"
+    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
     git -C "${DEST}" reset --hard "origin/${BRANCH}"
+    git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
@@ -94,7 +122,7 @@ sync_repository_checkout() {
 run_playbook() {
   cd "${DEST}"
 
-  /usr/bin/ansible-playbook \
+  "${ANSIBLE_PLAYBOOK_BIN}" \
     "${PLAYBOOK_ARGS[@]}" \
     "${PLAYBOOK}" "$@"
 }
@@ -103,12 +131,14 @@ run_playbook() {
 main() {
   load_environment
   prepare_runtime_context
-  write_runtime_inventory
   acquire_lock_or_exit
 
   {
     echo "Starting Ansible Pull at $(date '+%Y-%m-%d %H:%M:%S')"
     sync_repository_checkout
+    write_runtime_inventory
+    select_target_host
+    build_playbook_args
     run_playbook "$@"
   } >> "${RUN_LOG}" 2>&1
 }

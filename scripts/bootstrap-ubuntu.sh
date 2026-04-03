@@ -166,14 +166,21 @@ PLAYBOOK=${PLAYBOOK}
 DEST=${DEST}
 LOG_DIR=${LOG_DIR}
 EOF
+  chmod 0600 /etc/ansible/pull.env
 }
 
 # Ensure a local checkout exists and is synced to the requested branch.
 sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
-    git -C "${DEST}" fetch origin "${BRANCH}"
-    git -C "${DEST}" checkout "${BRANCH}"
+    if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
+      git -C "${DEST}" remote set-url origin "${REPO_URL}"
+    else
+      git -C "${DEST}" remote add origin "${REPO_URL}"
+    fi
+    git -C "${DEST}" fetch --prune origin "${BRANCH}"
+    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
     git -C "${DEST}" reset --hard "origin/${BRANCH}"
+    git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
     git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${DEST}"

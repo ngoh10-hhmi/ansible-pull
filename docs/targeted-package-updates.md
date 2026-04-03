@@ -69,7 +69,7 @@ Use this carefully. `state: latest` is useful for emergency response, but it is 
 
 ## Option 4. Manage third-party repositories and PPAs
 
-If a package requires an external repository (like Google Chrome, VS Code, or a PPA), you can define it in `vars/baseline.yml` or a host override file.
+If a package requires an external repository (like Google Chrome, VS Code, or a PPA), you can define it in `inventory/group_vars/all.yml` or a host override file.
 
 ### Adding a PPA
 
