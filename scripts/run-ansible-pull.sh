@@ -21,6 +21,7 @@ load_environment() {
   fi
 
   set -a
+  # shellcheck disable=SC1091
   # shellcheck source=/etc/ansible/pull.env
   source "${ENV_FILE}"
   set +a

@@ -72,6 +72,7 @@ load_existing_pull_env() {
   fi
 
   set -a
+  # shellcheck disable=SC1091
   # shellcheck source=/etc/ansible/pull.env
   source "${ENV_FILE}"
   set +a
