@@ -24,8 +24,9 @@ Private repo later:
 The script can also prompt for local users that should be added to the sudo
 group during bootstrap.
 
-If you choose Active Directory enrollment during bootstrap, the script will
-prompt for an AD username and run kinit interactively before ansible-pull.
+Bootstrap requires joining the hhmi.org Active Directory domain. The script
+will prompt for an AD username and hidden password before the domain-join
+convergence run.
 EOF
 }
 
@@ -47,7 +48,7 @@ GITHUB_TOKEN=""
 GITHUB_TOKEN_FILE=""
 SHORT_HOSTNAME=""
 MACHINE_TYPE=""
-DO_JOIN=""
+AD_JOIN_USER=""
 LOCAL_SUDO_USERS=()
 
 # Parse CLI arguments into global script settings.
@@ -259,10 +260,11 @@ prompt_local_sudo_users() {
 write_bootstrap_vars() {
   local ad_enabled="$1"
   local ad_user="${2:-}"
+  local include_sudo_users="${3:-true}"
   local sudo_user
   local sudo_users_yaml=""
 
-  if [[ "${#LOCAL_SUDO_USERS[@]}" -gt 0 ]]; then
+  if [[ "${include_sudo_users}" == "true" && "${#LOCAL_SUDO_USERS[@]}" -gt 0 ]]; then
     sudo_users_yaml="base_local_sudo_users:"
     for sudo_user in "${LOCAL_SUDO_USERS[@]}"; do
       sudo_users_yaml+=$'\n'"  - ${sudo_user}"
@@ -304,34 +306,60 @@ run_initial_configuration() {
   /usr/local/sbin/run-ansible-pull
 }
 
-# Optionally gather Kerberos creds and rerun convergence for AD enrollment.
-maybe_join_active_directory() {
-  local ad_user
+# Add requested local users to sudo as the final bootstrap action.
+apply_local_sudo_users() {
+  local user_name
 
-  read -r -p "Join AD domain hhmi.org now? (y/n): " DO_JOIN
-  if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
-    read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
-
-    if [[ -z "${ad_user}" ]]; then
-      die "Error: AD username cannot be empty when enrolling."
-    fi
-
-    if ! command -v kinit >/dev/null 2>&1; then
-      die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
-    fi
-
-    echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
-    while true; do
-      if kinit "${ad_user}@HHMI.ORG"; then
-        break
-      fi
-
-      echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
-    done
-
-    write_bootstrap_vars "true" "${ad_user}"
-    /usr/local/sbin/run-ansible-pull
+  if [[ "${#LOCAL_SUDO_USERS[@]}" -eq 0 ]]; then
+    return
   fi
+
+  for user_name in "${LOCAL_SUDO_USERS[@]}"; do
+    if ! id "${user_name}" >/dev/null 2>&1; then
+      echo "Warning: local user '${user_name}' does not exist; skipping sudo grant." >&2
+      continue
+    fi
+
+    usermod -aG sudo "${user_name}"
+  done
+}
+
+# Gather Kerberos creds and rerun convergence for the required AD enrollment.
+join_active_directory() {
+  local ad_user
+  local ad_password
+
+  read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
+  AD_JOIN_USER="${ad_user}"
+
+  if [[ -z "${ad_user}" ]]; then
+    die "Error: AD username cannot be empty."
+  fi
+
+  if ! command -v kinit >/dev/null 2>&1; then
+    die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
+  fi
+
+  echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
+  while true; do
+    read -r -s -p "AD Password: " ad_password
+    echo ""
+
+    if [[ -z "${ad_password}" ]]; then
+      echo "Error: AD password cannot be empty." >&2
+      continue
+    fi
+
+    if printf '%s\n' "${ad_password}" | kinit "${ad_user}@HHMI.ORG"; then
+      unset ad_password
+      break
+    fi
+
+    echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
+  done
+
+  write_bootstrap_vars "true" "${ad_user}" "false"
+  /usr/local/sbin/run-ansible-pull
 }
 
 # Ensure periodic self-healing continues after bootstrap finishes.
@@ -339,16 +367,14 @@ enable_pull_timer() {
   systemctl enable --now ansible-pull.timer || true
 }
 
-# Print post-enrollment reboot warning when AD join was requested.
-print_ad_reboot_warning_if_needed() {
-  if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "******************************************************************"
-    echo "WARNING: The machine has been joined to AD (hhmi.org)."
-    echo "A system reboot is REQUIRED before graphical logins will work."
-    echo "Please reboot your machine when ready: sudo reboot"
-    echo "******************************************************************"
-  fi
+# Print post-enrollment reboot warning after the required AD join completes.
+print_ad_reboot_warning() {
+  echo ""
+  echo "******************************************************************"
+  echo "WARNING: The machine has been joined to AD (hhmi.org)."
+  echo "A system reboot is REQUIRED before graphical logins will work."
+  echo "Please reboot your machine when ready: sudo reboot"
+  echo "******************************************************************"
 }
 
 # Final apt upgrade pass for immediate package freshness after bootstrap.
@@ -371,12 +397,14 @@ main() {
 
   echo "--- Initial Workstation Config ---"
   prompt_machine_identity
-  write_bootstrap_vars "false"
+  write_bootstrap_vars "false" "" "false"
   run_initial_configuration
-  maybe_join_active_directory
+  join_active_directory
   enable_pull_timer
-  print_ad_reboot_warning_if_needed
   run_final_upgrade
+  write_bootstrap_vars "true" "${AD_JOIN_USER}" "true"
+  apply_local_sudo_users
+  print_ad_reboot_warning
 }
 
 main "$@"

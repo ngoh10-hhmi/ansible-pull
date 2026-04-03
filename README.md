@@ -64,7 +64,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script now performs the initial clone itself, so you only need this one file on a fresh machine.
-During bootstrap it will also ask for machine type and optional local users that should be added to the `sudo` group.
+During bootstrap it will ask for machine type, an AD username plus hidden password for the required `hhmi.org` domain join, and optional local users that should be added to the `sudo` group as the final bootstrap step.
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 
