@@ -1,36 +1,54 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Static file locations used by scheduled ansible-pull runs.
 ENV_FILE="/etc/ansible/pull.env"
 BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "Missing ${ENV_FILE}" >&2
-  exit 1
-fi
+# Runtime variables loaded and built from ENV_FILE.
+HOSTNAME_SHORT=""
+HOSTNAME_FQDN=""
+RUN_LOG=""
+RUNTIME_INVENTORY=""
+LOCK_FILE=""
+PLAYBOOK_ARGS=()
 
-set -a
-source "${ENV_FILE}"
-set +a
+# Load configured pull settings from /etc/ansible/pull.env.
+load_environment() {
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    echo "Missing ${ENV_FILE}" >&2
+    exit 1
+  fi
 
-mkdir -p "${DEST}" "${LOG_DIR}"
+  set -a
+  source "${ENV_FILE}"
+  set +a
+}
 
-HOSTNAME_SHORT="$(hostname -s)"
-HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
-RUN_LOG="${LOG_DIR}/ansible-pull-${HOSTNAME_SHORT}.log"
-RUNTIME_INVENTORY="/etc/ansible/pull-inventory.yml"
-LOCK_FILE="/var/lock/ansible-pull.lock"
-PLAYBOOK_ARGS=(
-  --inventory "${RUNTIME_INVENTORY}"
-  --limit localhost
-  -e ansible_python_interpreter=/usr/bin/python3
-)
+# Prepare directories and derive per-host runtime file paths.
+prepare_runtime_context() {
+  mkdir -p "${DEST}" "${LOG_DIR}"
 
-if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
-  PLAYBOOK_ARGS+=(--extra-vars "@${BOOTSTRAP_VARS_FILE}")
-fi
+  HOSTNAME_SHORT="$(hostname -s)"
+  HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
+  RUN_LOG="${LOG_DIR}/ansible-pull-${HOSTNAME_SHORT}.log"
+  RUNTIME_INVENTORY="/etc/ansible/pull-inventory.yml"
+  LOCK_FILE="/var/lock/ansible-pull.lock"
 
-cat > "${RUNTIME_INVENTORY}" <<EOF
+  PLAYBOOK_ARGS=(
+    --inventory "${RUNTIME_INVENTORY}"
+    --limit localhost
+    -e ansible_python_interpreter=/usr/bin/python3
+  )
+
+  if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
+    PLAYBOOK_ARGS+=(--extra-vars "@${BOOTSTRAP_VARS_FILE}")
+  fi
+}
+
+# Build a local inventory that can match localhost/hostname/FQDN host_vars.
+write_runtime_inventory() {
+  cat > "${RUNTIME_INVENTORY}" <<EOF
 all:
   hosts:
     localhost:
@@ -43,19 +61,22 @@ all:
       ansible_connection: local
       ansible_python_interpreter: /usr/bin/python3
 EOF
+}
 
-exec 9>"${LOCK_FILE}"
+# Prevent overlapping runs from timer/manual invocations.
+acquire_lock_or_exit() {
+  exec 9>"${LOCK_FILE}"
 
-if ! flock -n 9; then
-  {
-    echo "Another ansible-pull run is already in progress. Exiting."
-  } >> "${RUN_LOG}"
-  exit 0
-fi
+  if ! flock -n 9; then
+    {
+      echo "Another ansible-pull run is already in progress. Exiting."
+    } >> "${RUN_LOG}"
+    exit 0
+  fi
+}
 
-{
-  echo "Starting Ansible Pull at $(date '+%Y-%m-%d %H:%M:%S')"
-
+# Sync the local checkout to the latest state of the configured branch.
+sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
     rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
     git -C "${DEST}" fetch origin "${BRANCH}"
@@ -65,10 +86,29 @@ fi
     rm -rf "${DEST}"
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
   fi
+}
 
+# Execute the configured playbook with consistent local-connection arguments.
+run_playbook() {
   cd "${DEST}"
 
   /usr/bin/ansible-playbook \
     "${PLAYBOOK_ARGS[@]}" \
     "${PLAYBOOK}" "$@"
-} >> "${RUN_LOG}" 2>&1
+}
+
+# Main scheduled/manual ansible-pull run flow.
+main() {
+  load_environment
+  prepare_runtime_context
+  write_runtime_inventory
+  acquire_lock_or_exit
+
+  {
+    echo "Starting Ansible Pull at $(date '+%Y-%m-%d %H:%M:%S')"
+    sync_repository_checkout
+    run_playbook "$@"
+  } >> "${RUN_LOG}" 2>&1
+}
+
+main "$@"
