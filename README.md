@@ -69,7 +69,7 @@ If you later make the repo private, the same script supports a local read-only G
 
 ## Shared baseline
 
-Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for settings that should apply to every workstation.
+Edit [vars/baseline.yml](vars/baseline.yml) for settings that should apply to every workstation.
 
 Example:
 
@@ -120,7 +120,7 @@ Important caveat:
 - Google Chrome can be kept updated if you add Google's APT repository later.
 - `ansible-pull` keeps config current; Ubuntu's package tools perform the actual updates.
 
-For intentionally updating one package outside the security-only unattended policy, see [docs/targeted-package-updates.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/targeted-package-updates.md).
+For intentionally updating one package outside the security-only unattended policy, see [docs/targeted-package-updates.md](docs/targeted-package-updates.md).
 
 ## Switching to private later
 
@@ -130,7 +130,7 @@ At cutover time you would:
 
 1. Make the GitHub repo private.
 2. Put a read-only credential on each workstation.
-3. Re-run [scripts/bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh) with `--github-user` and `--github-token-file`.
+3. Re-run [scripts/bootstrap-ubuntu.sh](scripts/bootstrap-ubuntu.sh) with `--github-user` and `--github-token-file`.
 4. Run `ansible-pull` once manually to confirm access.
 
 ## Suggested rollout

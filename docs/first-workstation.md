@@ -16,7 +16,7 @@ Assume the result is `ubuntu-test-laptop`.
 
 ## 2. Set the shared baseline in this repo
 
-Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for what every Ubuntu workstation should get.
+Edit [vars/baseline.yml](../vars/baseline.yml) for what every Ubuntu workstation should get.
 
 Recommended shared baseline:
 

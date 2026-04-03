@@ -2,7 +2,7 @@
 
 ## 1. Set the shared baseline
 
-Edit [vars/baseline.yml](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/vars/baseline.yml) for settings that should apply to every Ubuntu workstation.
+Edit [vars/baseline.yml](../vars/baseline.yml) for settings that should apply to every Ubuntu workstation.
 
 Example:
 
@@ -48,7 +48,7 @@ For your current plan, use a public HTTPS repo and no GitHub credential at all.
 
 ## 4. Copy bootstrap files to the machine
 
-You only need [bootstrap-ubuntu.sh](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/scripts/bootstrap-ubuntu.sh). It performs the initial clone itself.
+You only need [bootstrap-ubuntu.sh](../scripts/bootstrap-ubuntu.sh). It performs the initial clone itself.
 
 ## 5. Bootstrap
 
@@ -110,5 +110,5 @@ Using a token file is safer than passing the token directly on the command line.
 - Prefer package install and security patching before deeper OS policy changes
 - Add CI before the repo gets large
 
-See [docs/first-workstation.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/first-workstation.md) for the exact first-machine rollout.
-See [docs/targeted-package-updates.md](/Users/ngoh10/Documents/ChatGPT_Projects/ansible-pull/docs/targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.
+See [docs/first-workstation.md](first-workstation.md) for the exact first-machine rollout.
+See [docs/targeted-package-updates.md](targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.
