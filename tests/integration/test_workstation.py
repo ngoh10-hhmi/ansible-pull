@@ -71,7 +71,7 @@ def current_short_hostname() -> str:
 def test_ansible_pull_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/ansible-pull.timer")
     assert timer.exists
-    assert timer.contains("OnCalendar=*:0/15")
+    assert "OnCalendar=*:0/15" in timer.content_string
     assert timer.contains("RandomizedDelaySec=2m")
     assert host.run("systemctl is-enabled ansible-pull.timer").stdout.strip() == "enabled"
 
