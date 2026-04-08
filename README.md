@@ -100,6 +100,21 @@ sudo /usr/local/sbin/switch-pull-branch --branch testing --run-now
 sudo /usr/local/sbin/switch-pull-branch --branch main --run-now
 ```
 
+## Run On Demand
+
+To run `ansible-pull` immediately on a managed workstation:
+
+```bash
+sudo /usr/local/sbin/run-ansible-pull
+```
+
+To inspect the most recent run output:
+
+```bash
+journalctl -u ansible-pull.service -n 100 --no-pager
+tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
+```
+
 ## Shared baseline
 
 Edit [inventory/group_vars/all.yml](inventory/group_vars/all.yml) for settings that should apply to every workstation.
