@@ -91,7 +91,7 @@ The pull wrapper now writes to both journald and the per-host logfile, so either
 - APT-managed packages like `openssh-server`
 - Optional non-security package upgrades if you enable `base_apt_maintenance_enabled`
 
-By default, unattended upgrades are security-only and are configured to run every 30 days. This does not automatically manage snap refresh policy.
+By default, `ansible-pull` checks in every 15 minutes. A dedicated hourly systemd timer refreshes APT package lists, and unattended upgrades remain security-only on a 30-day cadence. This does not automatically manage snap refresh policy.
 
 ## Private repo later
 

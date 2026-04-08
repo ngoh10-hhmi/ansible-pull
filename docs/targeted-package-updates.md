@@ -3,6 +3,7 @@
 This repository is intentionally conservative by default:
 
 - unattended upgrades are security-only
+- A dedicated systemd timer refreshes APT package lists hourly
 - unattended upgrades run every 30 days
 - non-security updates are not applied automatically
 

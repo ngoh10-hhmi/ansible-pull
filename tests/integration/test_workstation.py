@@ -71,7 +71,8 @@ def current_short_hostname() -> str:
 def test_ansible_pull_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/ansible-pull.timer")
     assert timer.exists
-    assert timer.contains("OnCalendar=daily")
+    assert timer.contains("OnCalendar=*:0/15")
+    assert timer.contains("RandomizedDelaySec=2m")
     assert host.run("systemctl is-enabled ansible-pull.timer").stdout.strip() == "enabled"
 
 
@@ -81,12 +82,24 @@ def test_ansible_pull_service_logs_to_journal_with_identifier() -> None:
     assert service.contains("SyslogIdentifier=ansible-pull")
 
 
+def test_apt_refresh_timer_is_installed() -> None:
+    timer = host.file("/etc/systemd/system/apt-refresh.timer")
+    service = host.file("/etc/systemd/system/apt-refresh.service")
+
+    assert timer.exists
+    assert timer.contains("OnCalendar=hourly")
+    assert timer.contains("RandomizedDelaySec=0")
+    assert service.exists
+    assert service.contains("ExecStart=/usr/local/sbin/apt-refresh")
+    assert host.run("systemctl is-enabled apt-refresh.timer").stdout.strip() == "enabled"
+
+
 def test_unattended_upgrades_policy_is_installed() -> None:
     auto_upgrades = host.file("/etc/apt/apt.conf.d/20auto-upgrades")
     unattended = host.file("/etc/apt/apt.conf.d/52ansible-unattended-upgrades")
 
     assert auto_upgrades.exists
-    assert auto_upgrades.contains('APT::Periodic::Update-Package-Lists "30";')
+    assert auto_upgrades.contains('APT::Periodic::Update-Package-Lists "0";')
     assert auto_upgrades.contains('APT::Periodic::Unattended-Upgrade "30";')
     assert unattended.exists
     assert unattended.contains("archive=\\${distro_codename}-security")

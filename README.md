@@ -145,7 +145,7 @@ By default this repo is aimed at:
 - Any browser or other app installed from an APT repository you explicitly manage
 
 The shared package list in `inventory/group_vars/all.yml` is now the main place to define what every workstation should have. Host files should usually only use `base_workstation_extra_packages` for one-off additions.
-Unattended upgrades are configured for security updates only, with a 30-day interval for package list refresh and unattended upgrade execution.
+`ansible-pull` checks in every 15 minutes. A dedicated hourly systemd timer refreshes APT package lists, while unattended upgrades remain security-only on a 30-day interval.
 
 Important caveat:
 

@@ -82,6 +82,15 @@
     group: root
     mode: "0755"
 
+- name: Install apt refresh helper
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-refresh.sh') }}"
+    dest: /usr/local/sbin/apt-refresh
+    owner: root
+    group: root
+    mode: "0755"
+  when: base_apt_refresh_enabled
+
 - name: Install apt maintenance helper
   ansible.builtin.copy:
     content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-maintenance.sh') }}"
@@ -119,6 +128,26 @@
   notify: Reload systemd
   when: base_apt_maintenance_enabled
 
+- name: Install apt refresh service unit
+  ansible.builtin.template:
+    src: apt-refresh.service.j2
+    dest: /etc/systemd/system/apt-refresh.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  when: base_apt_refresh_enabled
+
+- name: Install apt refresh timer unit
+  ansible.builtin.template:
+    src: apt-refresh.timer.j2
+    dest: /etc/systemd/system/apt-refresh.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  when: base_apt_refresh_enabled
+
 - name: Install apt maintenance timer unit
   ansible.builtin.template:
     src: apt-maintenance.timer.j2
@@ -137,6 +166,21 @@
     name: ansible-pull.timer
     enabled: true
     state: started
+
+- name: Enable apt refresh timer
+  ansible.builtin.systemd_service:
+    name: apt-refresh.timer
+    enabled: true
+    state: started
+  when: base_apt_refresh_enabled
+
+- name: Disable apt refresh timer when not wanted
+  ansible.builtin.systemd_service:
+    name: apt-refresh.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not base_apt_refresh_enabled
 
 - name: Enable apt maintenance timer
   ansible.builtin.systemd_service:

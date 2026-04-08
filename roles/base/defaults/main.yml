@@ -14,14 +14,18 @@ base_ansible_pull_branch: "main"
 base_ansible_pull_playbook: "playbooks/workstation.yml"
 base_ansible_pull_directory: "/var/lib/ansible-pull"
 base_ansible_pull_log_dir: "/var/log/ansible-pull"
-base_ansible_pull_timer_on_calendar: "daily"
-base_ansible_pull_randomized_delay_sec: "15m"
+base_ansible_pull_timer_on_calendar: "*:0/15"
+base_ansible_pull_randomized_delay_sec: "2m"
+
+base_apt_refresh_enabled: true
+base_apt_refresh_timer_on_calendar: "hourly"
+base_apt_refresh_randomized_delay_sec: "0"
 
 base_apt_maintenance_enabled: false
 base_apt_maintenance_timer_on_calendar: "Sat *-*-* 03:00:00"
 
 base_workstation_enable_unattended_upgrades: true
-base_workstation_update_package_lists_days: 30
+base_workstation_update_package_lists_days: 0
 base_workstation_unattended_upgrade_days: 30
 
 base_unattended_upgrade_origins_patterns:
