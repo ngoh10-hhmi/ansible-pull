@@ -198,6 +198,8 @@
   when: not base_apt_maintenance_enabled
 
 - name: Configure APT periodic settings
+  # Package-list refresh stays disabled here because apt-refresh.timer runs
+  # `apt-get update` hourly outside the day-based APT::Periodic mechanism.
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/20auto-upgrades
     owner: root

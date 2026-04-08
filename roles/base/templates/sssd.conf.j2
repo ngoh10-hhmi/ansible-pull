@@ -7,6 +7,7 @@ config_file_version = 2
 ad_domain = hhmi.org
 ad_maximum_machine_account_password_age = 30
 {% if machine_type | default('desktop') == 'laptop' %}
+# Laptops keep explicit fallbacks for cases where SRV lookup is slow or VPN-only.
 ad_server = _srv_, jfdc1.hhmi.org
 backup_ad_server = 172.19.15.120, 172.19.15.10, 10.36.222.11
 {% endif %}
