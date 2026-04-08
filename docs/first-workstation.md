@@ -91,8 +91,11 @@ systemctl list-timers ansible-pull.timer
 Check the most recent log:
 
 ```bash
+journalctl -u ansible-pull.service -n 100 --no-pager
 tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
+
+Both commands should show the same run stream because the wrapper writes to the logfile and stdout/stderr for systemd.
 
 Check unattended upgrade settings:
 

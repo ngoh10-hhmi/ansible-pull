@@ -72,8 +72,11 @@ Check:
 ```bash
 systemctl status ansible-pull.timer
 systemctl list-timers ansible-pull.timer
+journalctl -u ansible-pull.service -n 100 --no-pager
 tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
+
+The pull wrapper now writes to both journald and the per-host logfile, so either view should show the same run output.
 
 ## 7. Ongoing workflow
 

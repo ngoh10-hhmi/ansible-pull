@@ -14,6 +14,7 @@ LOCK_FILE=""
 TARGET_HOST=""
 ANSIBLE_PLAYBOOK_BIN=""
 PLAYBOOK_ARGS=()
+RUN_STATUS="starting"
 
 # Load configured pull settings from /etc/ansible/pull.env.
 load_environment() {
@@ -45,6 +46,37 @@ prepare_runtime_context() {
     echo "ansible-playbook was not found in PATH" >&2
     exit 1
   fi
+}
+
+# Duplicate output to the per-host logfile and stdout/stderr so systemd can
+# capture the same stream in journald.
+setup_logging() {
+  touch "${RUN_LOG}"
+  exec > >(tee -a "${RUN_LOG}") 2>&1
+}
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+finish() {
+  local exit_code=$?
+
+  case "${RUN_STATUS}" in
+    success)
+      log "Completed ansible-pull run successfully."
+      ;;
+    locked)
+      log "Skipped ansible-pull run because another run is already in progress."
+      ;;
+    *)
+      if [[ "${exit_code}" -eq 0 ]]; then
+        log "Completed ansible-pull run."
+      else
+        log "ansible-pull run failed with exit code ${exit_code}."
+      fi
+      ;;
+  esac
 }
 
 build_playbook_args() {
@@ -92,9 +124,8 @@ acquire_lock_or_exit() {
   exec 9>"${LOCK_FILE}"
 
   if ! flock -n 9; then
-    {
-      echo "Another ansible-pull run is already in progress. Exiting."
-    } >> "${RUN_LOG}"
+    RUN_STATUS="locked"
+    log "Another ansible-pull run is already in progress. Exiting."
     exit 0
   fi
 }
@@ -131,16 +162,17 @@ run_playbook() {
 main() {
   load_environment
   prepare_runtime_context
+  setup_logging
+  trap finish EXIT
   acquire_lock_or_exit
 
-  {
-    echo "Starting Ansible Pull at $(date '+%Y-%m-%d %H:%M:%S')"
-    sync_repository_checkout
-    write_runtime_inventory
-    select_target_host
-    build_playbook_args
-    run_playbook "$@"
-  } >> "${RUN_LOG}" 2>&1
+  log "Starting ansible-pull run for host '${HOSTNAME_SHORT}' on branch '${BRANCH}'."
+  sync_repository_checkout
+  write_runtime_inventory
+  select_target_host
+  build_playbook_args
+  run_playbook "$@"
+  RUN_STATUS="success"
 }
 
 main "$@"

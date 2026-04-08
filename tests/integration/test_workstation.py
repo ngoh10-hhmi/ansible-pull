@@ -64,11 +64,21 @@ def configure_pull_environment(repo_url: Path, dest: Path, log_dir: Path) -> Non
     )
 
 
+def current_short_hostname() -> str:
+    return run("hostname", "-s").stdout.strip()
+
+
 def test_ansible_pull_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/ansible-pull.timer")
     assert timer.exists
     assert timer.contains("OnCalendar=daily")
     assert host.run("systemctl is-enabled ansible-pull.timer").stdout.strip() == "enabled"
+
+
+def test_ansible_pull_service_logs_to_journal_with_identifier() -> None:
+    service = host.file("/etc/systemd/system/ansible-pull.service")
+    assert service.exists
+    assert service.contains("SyslogIdentifier=ansible-pull")
 
 
 def test_unattended_upgrades_policy_is_installed() -> None:
@@ -95,6 +105,11 @@ def test_branch_switch_updates_origin_and_cleans_checkout() -> None:
 
         run("/usr/local/sbin/run-ansible-pull")
         assert (dest / "repo-one-marker.txt").exists()
+        run_log = log_dir / f"ansible-pull-{current_short_hostname()}.log"
+        assert run_log.exists()
+        run_log_text = run_log.read_text(encoding="utf-8")
+        assert "Starting ansible-pull run" in run_log_text
+        assert "Completed ansible-pull run successfully." in run_log_text
 
         stray_file = dest / "untracked-file.txt"
         stray_file.write_text("remove me\n", encoding="utf-8")
@@ -112,5 +127,7 @@ def test_branch_switch_updates_origin_and_cleans_checkout() -> None:
         assert not (dest / "repo-one-marker.txt").exists()
         assert not stray_file.exists()
         assert f"url = {repo_two}" in (dest / ".git" / "config").read_text(encoding="utf-8")
+        rerun_log_text = run_log.read_text(encoding="utf-8")
+        assert rerun_log_text.count("Starting ansible-pull run") >= 2
     finally:
         shutil.rmtree(workspace)

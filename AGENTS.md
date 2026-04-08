@@ -89,7 +89,7 @@ Inventory behavior:
 
 - Treat `/var/lib/ansible-pull` as disposable runtime state. Pull runs do `git reset --hard` and `git clean -fdx`.
 - Do not store persistent local state in the runtime checkout.
-- Do not assume logs live in the journal. The wrapper writes to `/var/log/ansible-pull/ansible-pull-<hostname>.log`.
+- The wrapper writes to both `/var/log/ansible-pull/ansible-pull-<hostname>.log` and stdout/stderr, so systemd service runs should be visible in both the logfile and `journalctl -u ansible-pull.service`.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - Unattended upgrades are currently security-only and configured on a 30-day cadence. Non-security upgrades are manual unless `base_apt_maintenance_enabled` is turned on.
