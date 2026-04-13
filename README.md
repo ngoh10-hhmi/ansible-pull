@@ -41,12 +41,15 @@ If you want a plain-English walkthrough of how bootstrap, scheduled runs, the
 [docs/how-it-works.md](docs/how-it-works.md).
 If you want a quick reference for the main configuration variables, read
 [docs/variable-map.md](docs/variable-map.md).
+If you want a reusable template for compacting a long coding session into a new
+chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
 
 ## Repository layout
 
 - `ansible.cfg`: local Ansible defaults
 - `docs/how-it-works.md`: plain-English repo walkthrough
 - `docs/dev-setup.md`: local developer environment and check workflow
+- `docs/session-handoff-template.md`: reusable chat compaction and handoff guide
 - `docs/variable-map.md`: quick reference for the main variables
 - `Makefile`: common local development commands
 - `.python-version`: expected local Python version for developer tooling
