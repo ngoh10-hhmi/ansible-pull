@@ -1,3 +1,15 @@
 ---
+# Example host override file. Keep shared baseline changes in
+# inventory/group_vars/all.yml and use host_vars only for true exceptions.
 base_workstation_extra_packages:
   - htop
+
+# Example AD-backed sudo delegation for one machine or one operator group.
+# ad_sudo_group: workstation-admins
+
+# Example local account creation. Use this only for local users, not directory
+# identities.
+# base_workstation_extra_users:
+#   - name: local-admin
+#     groups:
+#       - sudo

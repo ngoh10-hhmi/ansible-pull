@@ -5,7 +5,9 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Callable
 
+import pytest
 import testinfra
 
 host = testinfra.get_host("local://")
@@ -23,18 +25,41 @@ def run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]
     )
 
 
-def create_repo_variant(workspace: Path, name: str, marker_name: str, marker_contents: str) -> Path:
+def yaml_scalar(value: object) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    return str(value)
+
+
+def append_text(path: Path, content: str) -> None:
+    path.write_text(path.read_text(encoding="utf-8") + content, encoding="utf-8")
+
+
+def create_repo_variant(
+    workspace: Path,
+    name: str,
+    marker_name: str,
+    marker_contents: str,
+    mutate: Callable[[Path], None] | None = None,
+) -> Path:
     repo_dir = workspace / name
     run("git", "clone", "--quiet", "--branch", TEST_BRANCH, str(REPO_ROOT), str(repo_dir))
     run("git", "config", "user.name", "Codex CI", cwd=repo_dir)
     run("git", "config", "user.email", "codex-ci@example.com", cwd=repo_dir)
     (repo_dir / marker_name).write_text(marker_contents, encoding="utf-8")
+    if mutate is not None:
+        mutate(repo_dir)
     run("git", "add", "-A", cwd=repo_dir)
     run("git", "commit", "--quiet", "-m", f"Prepare {name}", cwd=repo_dir)
     return repo_dir
 
 
-def configure_pull_environment(repo_url: Path, dest: Path, log_dir: Path) -> None:
+def configure_pull_environment(
+    repo_url: Path,
+    dest: Path,
+    log_dir: Path,
+    extra_vars: dict[str, object] | None = None,
+) -> None:
     Path("/etc/ansible/pull.env").write_text(
         "\n".join(
             [
@@ -48,24 +73,56 @@ def configure_pull_environment(repo_url: Path, dest: Path, log_dir: Path) -> Non
         ),
         encoding="utf-8",
     )
+    bootstrap_lines = [
+        f"base_ansible_pull_repo_url: {repo_url}",
+        f"base_ansible_pull_branch: {TEST_BRANCH}",
+        "base_ansible_pull_playbook: playbooks/workstation.yml",
+        f"base_ansible_pull_directory: {dest}",
+        f"base_ansible_pull_log_dir: {log_dir}",
+        "base_ad_enroll: false",
+    ]
+    for key, value in (extra_vars or {}).items():
+        bootstrap_lines.append(f"{key}: {yaml_scalar(value)}")
     Path("/etc/ansible/bootstrap-vars.yml").write_text(
-        "\n".join(
-            [
-                f"base_ansible_pull_repo_url: {repo_url}",
-                f"base_ansible_pull_branch: {TEST_BRANCH}",
-                "base_ansible_pull_playbook: playbooks/workstation.yml",
-                f"base_ansible_pull_directory: {dest}",
-                f"base_ansible_pull_log_dir: {log_dir}",
-                "base_ad_enroll: false",
-                "",
-            ]
-        ),
+        "\n".join(bootstrap_lines + [""]),
         encoding="utf-8",
     )
 
 
 def current_short_hostname() -> str:
     return run("hostname", "-s").stdout.strip()
+
+
+def current_fqdn() -> str:
+    result = subprocess.run(
+        ("hostname", "-f"),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return result.stdout.strip()
+
+
+def run_pull(
+    repo_url: Path,
+    dest: Path,
+    log_dir: Path,
+    extra_vars: dict[str, object] | None = None,
+) -> None:
+    configure_pull_environment(repo_url, dest, log_dir, extra_vars=extra_vars)
+    run("/usr/local/sbin/run-ansible-pull")
+
+
+def restore_default_pull_state(workspace: Path) -> None:
+    run_pull(
+        REPO_ROOT,
+        workspace / "restore-checkout",
+        workspace / "restore-logs",
+        extra_vars={
+            "base_apt_refresh_enabled": True,
+            "base_apt_maintenance_enabled": False,
+        },
+    )
 
 
 def test_ansible_pull_timer_is_installed() -> None:
@@ -104,6 +161,112 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.exists
     assert unattended.contains("archive=\\${distro_codename}-security")
     assert unattended.contains('Unattended-Upgrade::Automatic-Reboot "false";')
+
+
+def test_apt_maintenance_timer_can_be_enabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-maint-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_apt_maintenance_enabled": True},
+        )
+
+        timer = host.file("/etc/systemd/system/apt-maintenance.timer")
+        service = host.file("/etc/systemd/system/apt-maintenance.service")
+
+        assert timer.exists
+        assert timer.contains("OnCalendar=Sat *-*-* 03:00:00")
+        assert service.exists
+        assert service.contains("ExecStart=/usr/local/sbin/apt-maintenance")
+        assert host.run("systemctl is-enabled apt-maintenance.timer").stdout.strip() == "enabled"
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_apt_refresh_timer_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-refresh-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_apt_refresh_enabled": False},
+        )
+
+        refresh_enabled = host.run("systemctl is-enabled apt-refresh.timer")
+        refresh_active = host.run("systemctl is-active apt-refresh.timer")
+
+        assert refresh_enabled.stdout.strip() == "disabled"
+        assert refresh_enabled.rc != 0
+        assert refresh_active.stdout.strip() == "inactive"
+        assert refresh_active.rc != 0
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_runtime_inventory_can_match_fqdn_host_vars() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-fqdn-"))
+    marker_path = workspace / "fqdn-hostvars-marker.txt"
+    short_hostname = current_short_hostname()
+    fqdn = current_fqdn()
+
+    if not fqdn or "." not in fqdn:
+        pytest.skip("hostname -f is not returning an FQDN on this test host")
+
+    def mutate(repo_dir: Path) -> None:
+        short_host_var = repo_dir / "inventory" / "host_vars" / f"{short_hostname}.yml"
+        if short_host_var.exists():
+            short_host_var.unlink()
+
+        fqdn_host_var = repo_dir / "inventory" / "host_vars" / f"{fqdn}.yml"
+        fqdn_host_var.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f"variant_marker_path: {marker_path}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        append_text(
+            repo_dir / "roles" / "base" / "tasks" / "main.yml",
+            "\n".join(
+                [
+                    "",
+                    "- name: Write variant hostvars marker",
+                    "  ansible.builtin.copy:",
+                    "    dest: \"{{ variant_marker_path }}\"",
+                    "    content: \"{{ inventory_hostname }}\\n\"",
+                    "    owner: root",
+                    "    group: root",
+                    "    mode: \"0644\"",
+                    "  when: variant_marker_path is defined",
+                    "",
+                ]
+            ),
+        )
+
+    try:
+        repo_variant = create_repo_variant(
+            workspace,
+            "fqdn-variant",
+            "repo-marker.txt",
+            "fqdn host vars\n",
+            mutate=mutate,
+        )
+        run_pull(repo_variant, workspace / "checkout", workspace / "logs")
+
+        assert marker_path.exists()
+        assert marker_path.read_text(encoding="utf-8").strip() == fqdn
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
 
 
 def test_branch_switch_updates_origin_and_cleans_checkout() -> None:

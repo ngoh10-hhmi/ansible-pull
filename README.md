@@ -46,18 +46,36 @@ If you want a quick reference for the main configuration variables, read
 
 - `ansible.cfg`: local Ansible defaults
 - `docs/how-it-works.md`: plain-English repo walkthrough
+- `docs/dev-setup.md`: local developer environment and check workflow
 - `docs/variable-map.md`: quick reference for the main variables
+- `Makefile`: common local development commands
+- `.python-version`: expected local Python version for developer tooling
 - `playbooks/workstation.yml`: main workstation playbook
 - `inventory/group_vars/all.yml`: shared settings for every Ubuntu workstation
 - `roles/base/`: baseline Ubuntu workstation configuration
 - `inventory/hosts.yml`: local inventory used by `ansible-pull`
 - `inventory/host_vars/`: optional per-host overrides
 - `scripts/bootstrap-ubuntu.sh`: first-run setup for a new Ubuntu machine
+- `scripts/setup-dev.sh`: local developer setup helper
+- `scripts/check.sh`: local wrapper for repo checks
 - `scripts/run-ansible-pull.sh`: wrapper used by `systemd`
 - `scripts/apt-maintenance.sh`: optional full-upgrade helper for non-security maintenance
 - `docs/decision-guide.md`: GitHub vs internal Git hosting tradeoffs
 - `docs/onboarding.md`: how to add and bootstrap a new workstation
 - `docs/targeted-package-updates.md`: how to handle one-off package updates safely
+
+## New development machine
+
+On a new workstation or laptop where you want to work on this repo locally:
+
+```bash
+git clone https://github.com/ngoh10-hhmi/ansible-pull.git
+cd ansible-pull
+./scripts/setup-dev.sh
+```
+
+That will create the local virtualenv, install the pinned Python tooling,
+verify `shellcheck`, and install the local `pre-commit` hook for this clone.
 
 ## Quick start
 
@@ -155,9 +173,28 @@ Example:
 ```yaml
 base_workstation_extra_packages:
   - htop
+ad_sudo_group: workstation-admins
 ```
 
 Use `base_workstation_extra_packages` to add packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
+
+## Common edits
+
+These are the most common day-to-day changes in this repo:
+
+1. Add a package for every workstation:
+   edit `inventory/group_vars/all.yml` and add it to `base_workstation_base_packages`
+2. Add a package for one workstation:
+   edit `inventory/host_vars/<hostname>.yml` and add it to `base_workstation_extra_packages`
+3. Change the pull cadence:
+   adjust `base_ansible_pull_timer_on_calendar`
+4. Change unattended-upgrade timing:
+   adjust `base_workstation_unattended_upgrade_days`
+5. Switch one workstation to the testing branch:
+   run `sudo /usr/local/sbin/switch-pull-branch --branch testing --run-now`
+
+If you want the background on why those variables work that way, see
+[docs/variable-map.md](docs/variable-map.md).
 
 ## What gets updated automatically
 
@@ -204,20 +241,16 @@ At cutover time you would:
 
 ## Local checks
 
-Install the pinned toolchain:
+Set up the local developer environment:
 
 ```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -U pip
-python -m pip install -r requirements-dev.txt
-brew install shellcheck
+make setup
 ```
 
 Run the same checks used in CI:
 
 ```bash
-pre-commit run --all-files
+make lint
 ```
 
 If you want the checks to run automatically before each local commit:
@@ -235,3 +268,6 @@ Notes:
   `shellcheck` must also be available on the machine.
 - If you use the virtualenv approach above, activate it with
   `source .venv/bin/activate` before running `pre-commit`.
+
+See [docs/dev-setup.md](docs/dev-setup.md) for the manual steps and common
+troubleshooting notes.

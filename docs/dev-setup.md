@@ -1,0 +1,88 @@
+# Developer Setup
+
+This repo keeps the local developer workflow intentionally small.
+
+The expected local setup is:
+
+1. use Python 3.11
+2. create a repo-local virtualenv
+3. install the pinned Python tools
+4. install `shellcheck`
+5. install the local `pre-commit` hook
+
+## Quick Start
+
+On a new development machine:
+
+```bash
+git clone https://github.com/ngoh10-hhmi/ansible-pull.git
+cd ansible-pull
+./scripts/setup-dev.sh
+```
+
+If you already have the repo cloned, run this from the repo root:
+
+```bash
+./scripts/setup-dev.sh
+```
+
+That script:
+
+- creates `.venv` with Python 3.11 when available
+- installs the pinned toolchain from `requirements-dev.txt`
+- checks for `shellcheck`
+- installs the local `pre-commit` hook
+
+## Manual Setup
+
+If you prefer to do the steps yourself:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
+python -m pip install -r requirements-dev.txt
+brew install shellcheck
+PRE_COMMIT_HOME=.pre-commit-cache pre-commit install
+```
+
+## Why Python 3.11
+
+The pinned toolchain in `requirements-ci.txt` currently expects Python 3.11 or
+newer. On macOS, the system `python3` may still be 3.9, which is too old for
+the pinned `ansible-core` version used here.
+
+The repo includes `.python-version` to make that expectation more obvious for
+people using `pyenv` or similar tools.
+
+## Common Commands
+
+After setup:
+
+```bash
+source .venv/bin/activate
+make lint
+```
+
+Or run the helper directly:
+
+```bash
+./scripts/check.sh
+```
+
+For integration tests on a bootstrapped Ubuntu host:
+
+```bash
+source .venv/bin/activate
+make integration
+```
+
+## Gotchas
+
+- `pre-commit` runs locally. It does not upload anything to GitHub.
+- The Git hook is installed only for this clone.
+- `shellcheck` is not installed by `pip`; it must exist on the machine.
+- If `pre-commit` complains about missing tools, make sure the repo virtualenv
+  is still present at `.venv`.
+- If you are in a constrained environment where `~/.cache/pre-commit` is not
+  writable, set `PRE_COMMIT_HOME=.pre-commit-cache` before running it.
