@@ -1,19 +1,29 @@
+---
 repos:
   - repo: local
     hooks:
       - id: yamllint
         name: yamllint
-        entry: yamllint .
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" &&
+          git ls-files "*.yml" "*.yaml" | xargs yamllint'
         language: system
         pass_filenames: false
       - id: ansible-lint
         name: ansible-lint
-        entry: ansible-lint playbooks/workstation.yml
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" && mkdir -p .ansible/tmp
+          && ANSIBLE_HOME=.ansible
+          ANSIBLE_LOCAL_TEMP=.ansible/tmp ansible-lint playbooks/workstation.yml'
         language: system
         pass_filenames: false
       - id: ansible-syntax-check
         name: ansible syntax check
-        entry: ansible-playbook --syntax-check --inventory inventory/hosts.yml playbooks/workstation.yml
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" && mkdir -p .ansible/tmp
+          && ANSIBLE_HOME=.ansible
+          ANSIBLE_LOCAL_TEMP=.ansible/tmp ansible-playbook --syntax-check
+          --inventory inventory/hosts.yml playbooks/workstation.yml'
         language: system
         pass_filenames: false
       - id: shellcheck

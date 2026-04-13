@@ -1,4 +1,8 @@
 ---
+# These are safe fallback values for the base role.
+# The active shared workstation baseline lives in inventory/group_vars/all.yml,
+# and machine-local bootstrap values can override both through
+# /etc/ansible/bootstrap-vars.yml.
 base_workstation_base_packages: []
 base_workstation_extra_packages: []
 
@@ -7,6 +11,8 @@ base_workstation_apt_repos: []
 
 base_workstation_extra_users: []
 base_local_sudo_users: []
+# AD enrollment defaults off here so the role remains safe by default.
+# Bootstrap and inventory decide when a workstation should actually enroll.
 base_ad_enroll: false
 
 base_ansible_pull_repo_url: "https://github.com/ngoh10-hhmi/ansible-pull.git"

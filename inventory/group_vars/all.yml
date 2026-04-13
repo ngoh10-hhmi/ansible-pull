@@ -1,4 +1,7 @@
 ---
+# This file is the shared workstation baseline for every managed machine.
+# Values here override role defaults and should hold the normal fleet policy.
+# Use inventory/host_vars/<hostname>.yml only for machine-specific exceptions.
 base_workstation_base_packages:
   - ca-certificates
   - curl
@@ -22,17 +25,20 @@ base_workstation_base_packages:
 
 base_workstation_extra_packages: []
 
+# Third-party APT sources are optional. The base role reads these lists and
+# installs keys/repos before package installation.
+# Examples of repo entries live just below for copy/paste reference.
 base_workstation_ppas: []
+# Examples (uncomment to use):
+# - name: google-chrome
+#   key_url: "https://dl.google.com/linux/linux_signing_key.pub"
+#   key_filename: "google-chrome.asc"
+#   repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
+# - name: vscode
+#   key_url: "https://packages.microsoft.com/keys/microsoft.asc"
+#   key_filename: "microsoft.asc"
+#   repo: "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/code stable main"
 base_workstation_apt_repos: []
-  # Examples (uncomment to use):
-  # - name: google-chrome
-  #   key_url: "https://dl.google.com/linux/linux_signing_key.pub"
-  #   key_filename: "google-chrome.asc"
-  #   repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
-  # - name: vscode
-  #   key_url: "https://packages.microsoft.com/keys/microsoft.asc"
-  #   key_filename: "microsoft.asc"
-  #   repo: "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/code stable main"
 
 # Keep the hourly metadata refresh enabled through apt-refresh.timer.
 base_apt_refresh_enabled: true

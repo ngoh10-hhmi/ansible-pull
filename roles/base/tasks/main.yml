@@ -1,4 +1,6 @@
 ---
+# General workstation baseline:
+# packages, ansible-pull runtime files, timers, update policy, and local users.
 - name: Ensure /etc/apt/keyrings exists
   ansible.builtin.file:
     path: /etc/apt/keyrings
@@ -41,6 +43,8 @@
     state: present
     update_cache: true
 
+# The base role also manages the local ansible-pull runtime so the workstation
+# can keep converging itself after the first bootstrap run.
 - name: Ensure ansible-pull runtime directories exist
   ansible.builtin.file:
     path: "{{ item }}"
@@ -161,6 +165,9 @@
 - name: Reload systemd before managing timers
   ansible.builtin.meta: flush_handlers
 
+# systemd timers are the steady-state entry point for this repo. The bootstrap
+# script installs the first wrapper, but the role keeps the installed units and
+# helper scripts in sync on later runs.
 - name: Enable ansible-pull timer
   ansible.builtin.systemd_service:
     name: ansible-pull.timer
@@ -241,6 +248,8 @@
     append: true
   loop: "{{ base_local_sudo_users }}"
 
+# Keep the HHMI-specific identity flow in its own task file so the workstation
+# baseline stays readable and AD changes are easier to review in one place.
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool

@@ -36,9 +36,17 @@ If you are new to Ansible, start here:
 
 That avoids having to stand up a full Ansible control node on day one.
 
+If you want a plain-English walkthrough of how bootstrap, scheduled runs, the
+`base` role, and variable precedence fit together, read
+[docs/how-it-works.md](docs/how-it-works.md).
+If you want a quick reference for the main configuration variables, read
+[docs/variable-map.md](docs/variable-map.md).
+
 ## Repository layout
 
 - `ansible.cfg`: local Ansible defaults
+- `docs/how-it-works.md`: plain-English repo walkthrough
+- `docs/variable-map.md`: quick reference for the main variables
 - `playbooks/workstation.yml`: main workstation playbook
 - `inventory/group_vars/all.yml`: shared settings for every Ubuntu workstation
 - `roles/base/`: baseline Ubuntu workstation configuration
@@ -199,7 +207,11 @@ At cutover time you would:
 Install the pinned toolchain:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
 python -m pip install -r requirements-dev.txt
+brew install shellcheck
 ```
 
 Run the same checks used in CI:
@@ -207,3 +219,19 @@ Run the same checks used in CI:
 ```bash
 pre-commit run --all-files
 ```
+
+If you want the checks to run automatically before each local commit:
+
+```bash
+pre-commit install
+```
+
+Notes:
+
+- `pre-commit` runs locally. It does not upload anything to GitHub by itself.
+- The pinned toolchain currently expects Python 3.11 or newer. If your default
+  `python3` is older, use `python3.11` when creating the virtualenv.
+- In this repo, the configured hooks use system-installed tools, so
+  `shellcheck` must also be available on the machine.
+- If you use the virtualenv approach above, activate it with
+  `source .venv/bin/activate` before running `pre-commit`.

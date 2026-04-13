@@ -1,4 +1,6 @@
 ---
+# HHMI-specific directory integration. These tasks assume this workstation
+# should join hhmi.org and use SSSD plus directory-backed sudo access.
 - name: Check if already joined to AD
   ansible.builtin.command: realm list
   register: base_realm_list_output
@@ -13,6 +15,8 @@
       - machine_type in ['desktop', 'laptop']
     fail_msg: "Set target_hostname and machine_type when base_ad_enroll is true."
 
+# target_hostname and machine_type usually come from bootstrap-persisted vars,
+# not from role defaults.
 - name: Set hostname correctly
   ansible.builtin.hostname:
     name: "{{ target_hostname | default(ansible_facts['hostname']) }}.hhmi.org"
