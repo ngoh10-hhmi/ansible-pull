@@ -61,6 +61,7 @@ After setup:
 
 ```bash
 source .venv/bin/activate
+make doctor
 make lint
 ```
 
@@ -68,6 +69,12 @@ Or run the helper directly:
 
 ```bash
 ./scripts/check.sh
+```
+
+If you want a fast sanity check before linting everything:
+
+```bash
+make doctor
 ```
 
 For integration tests on a bootstrapped Ubuntu host:
@@ -86,3 +93,7 @@ make integration
   is still present at `.venv`.
 - If you are in a constrained environment where `~/.cache/pre-commit` is not
   writable, set `PRE_COMMIT_HOME=.pre-commit-cache` before running it.
+- If you need a quick local diagnosis, run `make doctor`.
+
+For broader local and workstation troubleshooting, see
+[docs/troubleshooting.md](troubleshooting.md).

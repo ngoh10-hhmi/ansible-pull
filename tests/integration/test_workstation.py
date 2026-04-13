@@ -269,6 +269,118 @@ def test_runtime_inventory_can_match_fqdn_host_vars() -> None:
         shutil.rmtree(workspace)
 
 
+def test_runtime_inventory_prefers_short_hostname_host_vars() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-short-host-"))
+    marker_path = workspace / "short-hostvars-marker.txt"
+    short_hostname = current_short_hostname()
+    fqdn = current_fqdn()
+
+    if not fqdn or "." not in fqdn:
+        pytest.skip("hostname -f is not returning an FQDN on this test host")
+
+    def mutate(repo_dir: Path) -> None:
+        short_host_var = repo_dir / "inventory" / "host_vars" / f"{short_hostname}.yml"
+        short_host_var.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f"variant_marker_path: {marker_path}",
+                    "variant_marker_content: short-hostname",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        fqdn_host_var = repo_dir / "inventory" / "host_vars" / f"{fqdn}.yml"
+        fqdn_host_var.write_text(
+            "\n".join(
+                [
+                    "---",
+                    f"variant_marker_path: {marker_path}",
+                    "variant_marker_content: fqdn",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        append_text(
+            repo_dir / "roles" / "base" / "tasks" / "main.yml",
+            "\n".join(
+                [
+                    "",
+                    "- name: Write hostvars precedence marker",
+                    "  ansible.builtin.copy:",
+                    "    dest: \"{{ variant_marker_path }}\"",
+                    "    content: \"{{ variant_marker_content }}\\n\"",
+                    "    owner: root",
+                    "    group: root",
+                    "    mode: \"0644\"",
+                    "  when: variant_marker_path is defined and variant_marker_content is defined",
+                    "",
+                ]
+            ),
+        )
+
+    try:
+        repo_variant = create_repo_variant(
+            workspace,
+            "short-host-variant",
+            "repo-marker.txt",
+            "short hostname host vars\n",
+            mutate=mutate,
+        )
+        run_pull(repo_variant, workspace / "checkout", workspace / "logs")
+
+        assert marker_path.exists()
+        assert marker_path.read_text(encoding="utf-8").strip() == "short-hostname"
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_branch_switch_updates_pull_settings_without_running_immediately() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-switch-no-run-"))
+    try:
+        repo_one = create_repo_variant(workspace, "remote-one", "repo-one-marker.txt", "remote one\n")
+        repo_two = create_repo_variant(workspace, "remote-two", "repo-two-marker.txt", "remote two\n")
+
+        dest = workspace / "checkout"
+        log_dir = workspace / "logs"
+        configure_pull_environment(repo_one, dest, log_dir)
+
+        run("/usr/local/sbin/run-ansible-pull")
+        assert (dest / "repo-one-marker.txt").exists()
+        run_log = log_dir / f"ansible-pull-{current_short_hostname()}.log"
+        original_log_text = run_log.read_text(encoding="utf-8")
+        assert original_log_text.count("Starting ansible-pull run") == 1
+
+        run(
+            "/usr/local/sbin/switch-pull-branch",
+            "--branch",
+            TEST_BRANCH,
+            "--repo",
+            str(repo_two),
+        )
+
+        assert (dest / "repo-one-marker.txt").exists()
+        assert not (dest / "repo-two-marker.txt").exists()
+
+        pull_env = Path("/etc/ansible/pull.env").read_text(encoding="utf-8")
+        bootstrap_vars = Path("/etc/ansible/bootstrap-vars.yml").read_text(encoding="utf-8")
+        assert f"REPO_URL={repo_two}" in pull_env
+        assert f"BRANCH={TEST_BRANCH}" in pull_env
+        assert f"base_ansible_pull_repo_url: {repo_two}" in bootstrap_vars
+        assert f"base_ansible_pull_branch: {TEST_BRANCH}" in bootstrap_vars
+
+        rerun_log_text = run_log.read_text(encoding="utf-8")
+        assert rerun_log_text.count("Starting ansible-pull run") == 1
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
 def test_branch_switch_updates_origin_and_cleans_checkout() -> None:
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-verify-"))
     try:
@@ -306,4 +418,5 @@ def test_branch_switch_updates_origin_and_cleans_checkout() -> None:
         rerun_log_text = run_log.read_text(encoding="utf-8")
         assert rerun_log_text.count("Starting ansible-pull run") >= 2
     finally:
+        restore_default_pull_state(workspace)
         shutil.rmtree(workspace)

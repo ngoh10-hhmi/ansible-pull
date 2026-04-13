@@ -43,6 +43,8 @@ If you want a quick reference for the main configuration variables, read
 [docs/variable-map.md](docs/variable-map.md).
 If you want a reusable template for compacting a long coding session into a new
 chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
+If you need operator or local troubleshooting steps, read
+[docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## Repository layout
 
@@ -50,6 +52,7 @@ chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
 - `docs/how-it-works.md`: plain-English repo walkthrough
 - `docs/dev-setup.md`: local developer environment and check workflow
 - `docs/session-handoff-template.md`: reusable chat compaction and handoff guide
+- `docs/troubleshooting.md`: local and workstation troubleshooting steps
 - `docs/variable-map.md`: quick reference for the main variables
 - `Makefile`: common local development commands
 - `.python-version`: expected local Python version for developer tooling
@@ -59,6 +62,7 @@ chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
 - `inventory/hosts.yml`: local inventory used by `ansible-pull`
 - `inventory/host_vars/`: optional per-host overrides
 - `scripts/bootstrap-ubuntu.sh`: first-run setup for a new Ubuntu machine
+- `scripts/doctor.sh`: local and managed-workstation sanity checks
 - `scripts/setup-dev.sh`: local developer setup helper
 - `scripts/check.sh`: local wrapper for repo checks
 - `scripts/run-ansible-pull.sh`: wrapper used by `systemd`
@@ -79,6 +83,12 @@ cd ansible-pull
 
 That will create the local virtualenv, install the pinned Python tooling,
 verify `shellcheck`, and install the local `pre-commit` hook for this clone.
+
+To verify the environment afterward:
+
+```bash
+make doctor
+```
 
 ## Quick start
 
@@ -256,6 +266,12 @@ Run the same checks used in CI:
 make lint
 ```
 
+Run the local doctor check when you want a faster sanity check first:
+
+```bash
+make doctor
+```
+
 If you want the checks to run automatically before each local commit:
 
 ```bash
@@ -272,5 +288,6 @@ Notes:
 - If you use the virtualenv approach above, activate it with
   `source .venv/bin/activate` before running `pre-commit`.
 
-See [docs/dev-setup.md](docs/dev-setup.md) for the manual steps and common
-troubleshooting notes.
+See [docs/dev-setup.md](docs/dev-setup.md) for the manual setup details and
+[docs/troubleshooting.md](docs/troubleshooting.md) for common local or
+workstation failure paths.

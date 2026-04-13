@@ -117,6 +117,8 @@ select_target_host() {
   elif [[ -f "${DEST}/inventory/host_vars/${HOSTNAME_FQDN}.yml" ]]; then
     TARGET_HOST="${HOSTNAME_FQDN}"
   fi
+
+  log "Using runtime inventory host '${TARGET_HOST}' for host_vars resolution."
 }
 
 # Prevent overlapping runs from timer/manual invocations.
