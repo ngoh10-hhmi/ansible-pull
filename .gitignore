@@ -2,5 +2,6 @@
 .ansible/
 .DS_Store
 .cache/
+.pre-commit-cache/
 .venv/
 CLAUDE.md
