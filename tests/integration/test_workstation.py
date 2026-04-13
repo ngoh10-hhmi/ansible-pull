@@ -177,7 +177,7 @@ def test_apt_maintenance_timer_can_be_enabled() -> None:
         service = host.file("/etc/systemd/system/apt-maintenance.service")
 
         assert timer.exists
-        assert timer.contains("OnCalendar=Sat *-*-* 03:00:00")
+        assert "OnCalendar=Sat *-*-* 03:00:00" in timer.content_string
         assert service.exists
         assert service.contains("ExecStart=/usr/local/sbin/apt-maintenance")
         assert host.run("systemctl is-enabled apt-maintenance.timer").stdout.strip() == "enabled"
