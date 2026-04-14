@@ -82,17 +82,25 @@
     - "{{ base_ansible_pull_log_dir }}"
 
 - name: Install ansible-pull environment file
-  ansible.builtin.copy:
-    dest: /etc/ansible/pull.env
+  ansible.builtin.lineinfile:
+    path: /etc/ansible/pull.env
+    create: true
     owner: root
     group: root
     mode: "0600"
-    content: |
-      REPO_URL={{ base_ansible_pull_repo_url }}
-      BRANCH={{ base_ansible_pull_branch }}
-      PLAYBOOK={{ base_ansible_pull_playbook }}
-      DEST={{ base_ansible_pull_directory }}
-      LOG_DIR={{ base_ansible_pull_log_dir }}
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - key: REPO_URL
+      value: "{{ base_ansible_pull_repo_url }}"
+    - key: BRANCH
+      value: "{{ base_ansible_pull_branch }}"
+    - key: PLAYBOOK
+      value: "{{ base_ansible_pull_playbook }}"
+    - key: DEST
+      value: "{{ base_ansible_pull_directory }}"
+    - key: LOG_DIR
+      value: "{{ base_ansible_pull_log_dir }}"
 
 - name: Install ansible-pull logrotate configuration
   ansible.builtin.copy:
