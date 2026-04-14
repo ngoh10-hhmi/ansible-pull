@@ -45,3 +45,4 @@ When making code modifications, run the following validations:
 - Modifying bootstrap logic requires synchronized updates to both `scripts/bootstrap-ubuntu.sh` and `scripts/run-ansible-pull.sh`.
 - AD end-to-end, third-party APT onboarding, and specific idempotency tests have gaps in current CI coverage; always flag these for heavy manual validation.
 - **NO SECRETS:** Ensure zero credentials exist in git. Active repo credentials or local secrets belong strictly on the target machine.
+  - **Slack Notifications:** Set `SLACK_WEBHOOK_URL` natively inside `/etc/ansible/pull.env`. You can inject this during initial enrollment via `./bootstrap-ubuntu.sh --slack-webhook <url>` or push it in manually. It defaults to alerting on successes but this can be muted by modifying `SLACK_NOTIFY_SUCCESS=false` in the same environment file.

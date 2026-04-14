@@ -59,12 +59,47 @@ log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
+notify_slack() {
+  local status="$1"
+  local msg="$2"
+  
+  if [[ -z "${SLACK_WEBHOOK_URL:-}" ]]; then
+    return
+  fi
+
+  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-false}" != "true" ]]; then
+    return
+  fi
+
+  local color="#36a64f"
+  if [[ "${status}" != "success" ]]; then
+    color="#ff0000"
+  fi
+
+  local payload
+  payload="$(cat <<EOF
+{
+  "attachments": [
+    {
+      "color": "${color}",
+      "title": "ansible-pull on ${HOSTNAME_SHORT}",
+      "text": "${msg}"
+    }
+  ]
+}
+EOF
+)"
+
+  curl -s -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}" || true
+}
+
 finish() {
   local exit_code=$?
 
   case "${RUN_STATUS}" in
     success)
       log "Completed ansible-pull run successfully."
+      notify_slack "success" "Completed ansible-pull run successfully on branch ${BRANCH:-unknown}."
       ;;
     locked)
       log "Skipped ansible-pull run because another run is already in progress."
@@ -72,8 +107,10 @@ finish() {
     *)
       if [[ "${exit_code}" -eq 0 ]]; then
         log "Completed ansible-pull run."
+        notify_slack "success" "Completed ansible-pull run on branch ${BRANCH:-unknown}."
       else
         log "ansible-pull run failed with exit code ${exit_code}."
+        notify_slack "failed" "ansible-pull run failed with exit code ${exit_code}."
       fi
       ;;
   esac

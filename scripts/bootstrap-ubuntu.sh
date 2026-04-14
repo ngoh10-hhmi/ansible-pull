@@ -8,6 +8,7 @@ Usage:
   bootstrap-ubuntu.sh --repo <repo-url> [--branch <branch>] [--playbook <path>]
                       [--github-user <username>]
                       [--github-token <token> | --github-token-file <path>]
+                      [--slack-webhook <url>] [--slack-notify-success <true|false>]
 
 Example:
   sudo ./bootstrap-ubuntu.sh \
@@ -50,6 +51,8 @@ SHORT_HOSTNAME=""
 MACHINE_TYPE=""
 AD_JOIN_USER=""
 LOCAL_SUDO_USERS=()
+SLACK_WEBHOOK_URL=""
+SLACK_NOTIFY_SUCCESS="true"
 
 # Parse CLI arguments into global script settings.
 parse_args() {
@@ -77,6 +80,14 @@ parse_args() {
         ;;
       --github-token-file)
         GITHUB_TOKEN_FILE="${2:-}"
+        shift 2
+        ;;
+      --slack-webhook)
+        SLACK_WEBHOOK_URL="${2:-}"
+        shift 2
+        ;;
+      --slack-notify-success)
+        SLACK_NOTIFY_SUCCESS="${2:-}"
         shift 2
         ;;
       -h|--help)
@@ -170,6 +181,8 @@ BRANCH=${BRANCH}
 PLAYBOOK=${PLAYBOOK}
 DEST=${DEST}
 LOG_DIR=${LOG_DIR}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+SLACK_NOTIFY_SUCCESS=${SLACK_NOTIFY_SUCCESS}
 EOF
   chmod 0600 /etc/ansible/pull.env
 }
