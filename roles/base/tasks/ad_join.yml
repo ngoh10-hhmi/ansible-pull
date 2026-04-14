@@ -13,7 +13,8 @@
       - target_hostname | length > 0
       - machine_type is defined
       - machine_type in ['desktop', 'laptop']
-    fail_msg: "Set target_hostname and machine_type when base_ad_enroll is true."
+    fail_msg: >-
+      Set target_hostname and machine_type when base_ad_enroll is true.
 
 # target_hostname and machine_type usually come from bootstrap-persisted vars,
 # not from role defaults.

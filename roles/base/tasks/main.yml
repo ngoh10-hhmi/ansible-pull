@@ -121,7 +121,11 @@
 
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:
-    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/run-ansible-pull.sh') }}"
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/run-ansible-pull.sh'
+      ) }}
     dest: /usr/local/sbin/run-ansible-pull
     owner: root
     group: root
@@ -129,7 +133,11 @@
 
 - name: Install ansible-pull branch switch helper
   ansible.builtin.copy:
-    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/switch-pull-branch.sh') }}"
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/switch-pull-branch.sh'
+      ) }}
     dest: /usr/local/sbin/switch-pull-branch
     owner: root
     group: root
@@ -137,7 +145,11 @@
 
 - name: Install apt refresh helper
   ansible.builtin.copy:
-    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-refresh.sh') }}"
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/apt-refresh.sh'
+      ) }}
     dest: /usr/local/sbin/apt-refresh
     owner: root
     group: root
@@ -146,7 +158,11 @@
 
 - name: Install apt maintenance helper
   ansible.builtin.copy:
-    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-maintenance.sh') }}"
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/apt-maintenance.sh'
+      ) }}
     dest: /usr/local/sbin/apt-maintenance
     owner: root
     group: root
@@ -262,8 +278,13 @@
     group: root
     mode: "0644"
     content: |
-      APT::Periodic::Update-Package-Lists "{{ base_workstation_update_package_lists_days }}";
-      APT::Periodic::Unattended-Upgrade "{{ base_workstation_unattended_upgrade_days if base_workstation_enable_unattended_upgrades else '0' }}";
+      APT::Periodic::Update-Package-Lists "{{
+        base_workstation_update_package_lists_days
+      }}";
+      APT::Periodic::Unattended-Upgrade "{{
+        base_workstation_unattended_upgrade_days
+        if base_workstation_enable_unattended_upgrades else '0'
+      }}";
 
 - name: Configure unattended-upgrades allowed origins
   ansible.builtin.copy:

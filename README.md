@@ -41,8 +41,6 @@ If you want a plain-English walkthrough of how bootstrap, scheduled runs, the
 [docs/how-it-works.md](docs/how-it-works.md).
 If you want a quick reference for the main configuration variables, read
 [docs/variable-map.md](docs/variable-map.md).
-If you want a reusable template for compacting a long coding session into a new
-chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
 If you need operator or local troubleshooting steps, read
 [docs/troubleshooting.md](docs/troubleshooting.md).
 If you want a simple Git worktree layout for `testing` and `main`, read
@@ -53,7 +51,6 @@ If you want a simple Git worktree layout for `testing` and `main`, read
 - `ansible.cfg`: local Ansible defaults
 - `docs/how-it-works.md`: plain-English repo walkthrough
 - `docs/dev-setup.md`: local developer environment and check workflow
-- `docs/session-handoff-template.md`: reusable chat compaction and handoff guide
 - `docs/troubleshooting.md`: local and workstation troubleshooting steps
 - `docs/variable-map.md`: quick reference for the main variables
 - `docs/worktree-setup.md`: recommended Git worktree layout for this repo
