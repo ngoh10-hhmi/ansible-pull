@@ -2,7 +2,7 @@
 
 ## 1. Set the shared baseline
 
-Edit [vars/baseline.yml](../vars/baseline.yml) for settings that should apply to every Ubuntu workstation.
+Edit [inventory/group_vars/all.yml](../inventory/group_vars/all.yml) for settings that should apply to every Ubuntu workstation.
 
 Example:
 
@@ -31,7 +31,7 @@ Example:
 
 ```yaml
 base_workstation_extra_packages:
-  - openssh-server
+  - htop
 ```
 
 If a machine needs no special settings yet, you can skip this.
@@ -63,6 +63,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
+The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate any existing local users that should be added to the `sudo` group at the end of bootstrap.
 
 ## 6. Verify
 
@@ -71,8 +72,11 @@ Check:
 ```bash
 systemctl status ansible-pull.timer
 systemctl list-timers ansible-pull.timer
+journalctl -u ansible-pull.service -n 100 --no-pager
 tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
+
+The pull wrapper now writes to both journald and the per-host logfile, so either view should show the same run output.
 
 ## 7. Ongoing workflow
 
@@ -87,7 +91,7 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 - APT-managed packages like `openssh-server`
 - Optional non-security package upgrades if you enable `base_apt_maintenance_enabled`
 
-By default, unattended upgrades are security-only and are configured to run every 30 days. This does not automatically manage snap refresh policy.
+By default, `ansible-pull` checks in every 15 minutes. A dedicated hourly systemd timer refreshes APT package lists, and unattended upgrades remain security-only on a 30-day cadence. This does not automatically manage snap refresh policy.
 
 ## Private repo later
 
@@ -108,7 +112,7 @@ Using a token file is safer than passing the token directly on the command line.
 - Avoid managing everything at once
 - Keep secrets out of the repo
 - Prefer package install and security patching before deeper OS policy changes
-- Add CI before the repo gets large
+- Run `pre-commit` before pushing changes so local checks match CI
 
 See [docs/first-workstation.md](first-workstation.md) for the exact first-machine rollout.
 See [docs/targeted-package-updates.md](targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.

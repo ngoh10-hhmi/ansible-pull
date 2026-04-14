@@ -7,3 +7,7 @@
   ansible.builtin.systemd_service:
     name: sssd
     state: restarted
+
+- name: Force APT cache update
+  ansible.builtin.apt:
+    update_cache: true

@@ -8,6 +8,7 @@ Usage:
   bootstrap-ubuntu.sh --repo <repo-url> [--branch <branch>] [--playbook <path>]
                       [--github-user <username>]
                       [--github-token <token> | --github-token-file <path>]
+                      [--slack-webhook <url>] [--slack-notify-success <true|false>]
 
 Example:
   sudo ./bootstrap-ubuntu.sh \
@@ -21,8 +22,12 @@ Private repo later:
     --github-user machine-reader \
     --github-token-file /root/github-read-token.txt
 
-If you choose Active Directory enrollment during bootstrap, the script will
-prompt for an AD username and run kinit interactively before ansible-pull.
+The script can also prompt for local users that should be added to the sudo
+group during bootstrap.
+
+Bootstrap requires joining the hhmi.org Active Directory domain. The script
+will prompt for an AD username and hidden password before the domain-join
+convergence run.
 EOF
 }
 
@@ -44,7 +49,10 @@ GITHUB_TOKEN=""
 GITHUB_TOKEN_FILE=""
 SHORT_HOSTNAME=""
 MACHINE_TYPE=""
-DO_JOIN=""
+AD_JOIN_USER=""
+LOCAL_SUDO_USERS=()
+SLACK_WEBHOOK_URL=""
+SLACK_NOTIFY_SUCCESS="true"
 
 # Parse CLI arguments into global script settings.
 parse_args() {
@@ -72,6 +80,14 @@ parse_args() {
         ;;
       --github-token-file)
         GITHUB_TOKEN_FILE="${2:-}"
+        shift 2
+        ;;
+      --slack-webhook)
+        SLACK_WEBHOOK_URL="${2:-}"
+        shift 2
+        ;;
+      --slack-notify-success)
+        SLACK_NOTIFY_SUCCESS="${2:-}"
         shift 2
         ;;
       -h|--help)
@@ -103,6 +119,8 @@ validate_prerequisites() {
     die "Cannot detect operating system."
   fi
 
+  # shellcheck disable=SC1091
+  # shellcheck source=/etc/os-release
   source /etc/os-release
 
   if [[ "${ID:-}" != "ubuntu" ]]; then
@@ -163,15 +181,24 @@ BRANCH=${BRANCH}
 PLAYBOOK=${PLAYBOOK}
 DEST=${DEST}
 LOG_DIR=${LOG_DIR}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+SLACK_NOTIFY_SUCCESS=${SLACK_NOTIFY_SUCCESS}
 EOF
+  chmod 0600 /etc/ansible/pull.env
 }
 
 # Ensure a local checkout exists and is synced to the requested branch.
 sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
-    git -C "${DEST}" fetch origin "${BRANCH}"
-    git -C "${DEST}" checkout "${BRANCH}"
+    if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
+      git -C "${DEST}" remote set-url origin "${REPO_URL}"
+    else
+      git -C "${DEST}" remote add origin "${REPO_URL}"
+    fi
+    git -C "${DEST}" fetch --prune origin "${BRANCH}"
+    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
     git -C "${DEST}" reset --hard "origin/${BRANCH}"
+    git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
     git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
@@ -217,6 +244,27 @@ prompt_machine_identity() {
       echo "Error: Please enter either 'laptop' or 'desktop'."
     fi
   done
+
+  prompt_local_sudo_users
+}
+
+# Prompt for optional local users that should be granted sudo access.
+prompt_local_sudo_users() {
+  local sudo_users_input
+  local sanitized_input
+  local user_name
+
+  read -r -p "Local users to add to sudo (comma-separated, leave blank for none): " sudo_users_input
+
+  if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
+    return
+  fi
+
+  sanitized_input="${sudo_users_input//,/ }"
+
+  for user_name in ${sanitized_input}; do
+    LOCAL_SUDO_USERS+=("${user_name}")
+  done
 }
 
 # Persist bootstrap variables for Ansible.
@@ -225,29 +273,41 @@ prompt_machine_identity() {
 write_bootstrap_vars() {
   local ad_enabled="$1"
   local ad_user="${2:-}"
+  local include_sudo_users="${3:-true}"
+  local sudo_user
+  local sudo_users_yaml=""
+
+  if [[ "${include_sudo_users}" == "true" && "${#LOCAL_SUDO_USERS[@]}" -gt 0 ]]; then
+    sudo_users_yaml="base_local_sudo_users:"
+    for sudo_user in "${LOCAL_SUDO_USERS[@]}"; do
+      sudo_users_yaml+=$'\n'"  - ${sudo_user}"
+    done
+  fi
 
   if [[ "${ad_enabled}" == "true" ]]; then
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
-base_ansible_pull_repo_url: ${REPO_URL}
-base_ansible_pull_branch: ${BRANCH}
-base_ansible_pull_playbook: ${PLAYBOOK}
-base_ansible_pull_directory: ${DEST}
-base_ansible_pull_log_dir: ${LOG_DIR}
-target_hostname: ${SHORT_HOSTNAME}
-machine_type: ${MACHINE_TYPE}
+base_ansible_pull_repo_url: "${REPO_URL}"
+base_ansible_pull_branch: "${BRANCH}"
+base_ansible_pull_playbook: "${PLAYBOOK}"
+base_ansible_pull_directory: "${DEST}"
+base_ansible_pull_log_dir: "${LOG_DIR}"
+target_hostname: "${SHORT_HOSTNAME}"
+machine_type: "${MACHINE_TYPE}"
 base_ad_enroll: true
-ad_join_user: ${ad_user}
+ad_join_user: "${ad_user}"
+${sudo_users_yaml}
 EOF
   else
     cat > "${BOOTSTRAP_VARS_FILE}" <<EOF
-base_ansible_pull_repo_url: ${REPO_URL}
-base_ansible_pull_branch: ${BRANCH}
-base_ansible_pull_playbook: ${PLAYBOOK}
-base_ansible_pull_directory: ${DEST}
-base_ansible_pull_log_dir: ${LOG_DIR}
-target_hostname: ${SHORT_HOSTNAME}
-machine_type: ${MACHINE_TYPE}
+base_ansible_pull_repo_url: "${REPO_URL}"
+base_ansible_pull_branch: "${BRANCH}"
+base_ansible_pull_playbook: "${PLAYBOOK}"
+base_ansible_pull_directory: "${DEST}"
+base_ansible_pull_log_dir: "${LOG_DIR}"
+target_hostname: "${SHORT_HOSTNAME}"
+machine_type: "${MACHINE_TYPE}"
 base_ad_enroll: false
+${sudo_users_yaml}
 EOF
   fi
 
@@ -259,34 +319,60 @@ run_initial_configuration() {
   /usr/local/sbin/run-ansible-pull
 }
 
-# Optionally gather Kerberos creds and rerun convergence for AD enrollment.
-maybe_join_active_directory() {
-  local ad_user
+# Add requested local users to sudo as the final bootstrap action.
+apply_local_sudo_users() {
+  local user_name
 
-  read -r -p "Join AD domain hhmi.org now? (y/n): " DO_JOIN
-  if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
-    read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
-
-    if [[ -z "${ad_user}" ]]; then
-      die "Error: AD username cannot be empty when enrolling."
-    fi
-
-    if ! command -v kinit >/dev/null 2>&1; then
-      die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
-    fi
-
-    echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
-    while true; do
-      if kinit "${ad_user}@HHMI.ORG"; then
-        break
-      fi
-
-      echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
-    done
-
-    write_bootstrap_vars "true" "${ad_user}"
-    /usr/local/sbin/run-ansible-pull
+  if [[ "${#LOCAL_SUDO_USERS[@]}" -eq 0 ]]; then
+    return
   fi
+
+  for user_name in "${LOCAL_SUDO_USERS[@]}"; do
+    if ! id "${user_name}" >/dev/null 2>&1; then
+      echo "Warning: local user '${user_name}' does not exist; skipping sudo grant." >&2
+      continue
+    fi
+
+    usermod -aG sudo "${user_name}"
+  done
+}
+
+# Gather Kerberos creds and rerun convergence for the required AD enrollment.
+join_active_directory() {
+  local ad_user
+  local ad_password
+
+  read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
+  AD_JOIN_USER="${ad_user}"
+
+  if [[ -z "${ad_user}" ]]; then
+    die "Error: AD username cannot be empty."
+  fi
+
+  if ! command -v kinit >/dev/null 2>&1; then
+    die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
+  fi
+
+  echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
+  while true; do
+    read -r -s -p "AD Password: " ad_password
+    echo ""
+
+    if [[ -z "${ad_password}" ]]; then
+      echo "Error: AD password cannot be empty." >&2
+      continue
+    fi
+
+    if printf '%s\n' "${ad_password}" | kinit "${ad_user}@HHMI.ORG"; then
+      unset ad_password
+      break
+    fi
+
+    echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
+  done
+
+  write_bootstrap_vars "true" "${ad_user}" "false"
+  /usr/local/sbin/run-ansible-pull
 }
 
 # Ensure periodic self-healing continues after bootstrap finishes.
@@ -294,16 +380,14 @@ enable_pull_timer() {
   systemctl enable --now ansible-pull.timer || true
 }
 
-# Print post-enrollment reboot warning when AD join was requested.
-print_ad_reboot_warning_if_needed() {
-  if [[ "${DO_JOIN}" =~ ^[Yy]$ ]]; then
-    echo ""
-    echo "******************************************************************"
-    echo "WARNING: The machine has been joined to AD (hhmi.org)."
-    echo "A system reboot is REQUIRED before graphical logins will work."
-    echo "Please reboot your machine when ready: sudo reboot"
-    echo "******************************************************************"
-  fi
+# Print post-enrollment reboot warning after the required AD join completes.
+print_ad_reboot_warning() {
+  echo ""
+  echo "******************************************************************"
+  echo "WARNING: The machine has been joined to AD (hhmi.org)."
+  echo "A system reboot is REQUIRED before graphical logins will work."
+  echo "Please reboot your machine when ready: sudo reboot"
+  echo "******************************************************************"
 }
 
 # Final apt upgrade pass for immediate package freshness after bootstrap.
@@ -326,12 +410,14 @@ main() {
 
   echo "--- Initial Workstation Config ---"
   prompt_machine_identity
-  write_bootstrap_vars "false"
+  write_bootstrap_vars "false" "" "false"
   run_initial_configuration
-  maybe_join_active_directory
+  join_active_directory
   enable_pull_timer
-  print_ad_reboot_warning_if_needed
   run_final_upgrade
+  write_bootstrap_vars "true" "${AD_JOIN_USER}" "true"
+  apply_local_sudo_users
+  print_ad_reboot_warning
 }
 
 main "$@"

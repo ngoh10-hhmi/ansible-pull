@@ -1,4 +1,6 @@
 ---
+# General workstation baseline:
+# packages, ansible-pull runtime files, timers, update policy, and local users.
 - name: Ensure /etc/apt/keyrings exists
   ansible.builtin.file:
     path: /etc/apt/keyrings
@@ -23,6 +25,7 @@
     state: present
     update_cache: false
   loop: "{{ base_workstation_apt_repos | default([]) }}"
+  notify: Force APT cache update
 
 - name: Add Ubuntu PPAs
   ansible.builtin.apt_repository:
@@ -30,17 +33,42 @@
     state: present
     update_cache: false
   loop: "{{ base_workstation_ppas | default([]) }}"
+  notify: Force APT cache update
+
+- name: Flush handlers to update APT cache
+  ansible.builtin.meta: flush_handlers
 
 - name: Install base Ubuntu packages
-  ansible.builtin.apt:
-    name: >-
-      {{
-        base_workstation_base_packages
-        + base_workstation_extra_packages
-      }}
-    state: present
-    update_cache: true
+  block:
+    - name: Try installing packages with cached indexes
+      ansible.builtin.apt:
+        name: >-
+          {{
+            base_workstation_base_packages
+            + base_workstation_extra_packages
+          }}
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+  rescue:
+    - name: Fallback to forceful APT cache refresh if packages are missing
+      ansible.builtin.apt:
+        name: >-
+          {{
+            base_workstation_base_packages
+            + base_workstation_extra_packages
+          }}
+        state: present
+        update_cache: true
 
+- name: Purge explicitly removed packages
+  ansible.builtin.apt:
+    name: "{{ base_workstation_remove_packages }}"
+    state: absent
+  when: (base_workstation_remove_packages | default([])) | length > 0
+
+# The base role also manages the local ansible-pull runtime so the workstation
+# can keep converging itself after the first bootstrap run.
 - name: Ensure ansible-pull runtime directories exist
   ansible.builtin.file:
     path: "{{ item }}"
@@ -54,17 +82,42 @@
     - "{{ base_ansible_pull_log_dir }}"
 
 - name: Install ansible-pull environment file
-  ansible.builtin.copy:
-    dest: /etc/ansible/pull.env
+  ansible.builtin.lineinfile:
+    path: /etc/ansible/pull.env
+    create: true
     owner: root
     group: root
     mode: "0600"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - key: REPO_URL
+      value: "{{ base_ansible_pull_repo_url }}"
+    - key: BRANCH
+      value: "{{ base_ansible_pull_branch }}"
+    - key: PLAYBOOK
+      value: "{{ base_ansible_pull_playbook }}"
+    - key: DEST
+      value: "{{ base_ansible_pull_directory }}"
+    - key: LOG_DIR
+      value: "{{ base_ansible_pull_log_dir }}"
+
+- name: Install ansible-pull logrotate configuration
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/ansible-pull
+    owner: root
+    group: root
+    mode: "0644"
     content: |
-      REPO_URL={{ base_ansible_pull_repo_url }}
-      BRANCH={{ base_ansible_pull_branch }}
-      PLAYBOOK={{ base_ansible_pull_playbook }}
-      DEST={{ base_ansible_pull_directory }}
-      LOG_DIR={{ base_ansible_pull_log_dir }}
+      {{ base_ansible_pull_log_dir }}/*.log {
+          weekly
+          rotate 4
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0644 root root
+      }
 
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:
@@ -81,6 +134,15 @@
     owner: root
     group: root
     mode: "0755"
+
+- name: Install apt refresh helper
+  ansible.builtin.copy:
+    content: "{{ lookup('ansible.builtin.file', playbook_dir + '/../scripts/apt-refresh.sh') }}"
+    dest: /usr/local/sbin/apt-refresh
+    owner: root
+    group: root
+    mode: "0755"
+  when: base_apt_refresh_enabled
 
 - name: Install apt maintenance helper
   ansible.builtin.copy:
@@ -119,6 +181,26 @@
   notify: Reload systemd
   when: base_apt_maintenance_enabled
 
+- name: Install apt refresh service unit
+  ansible.builtin.template:
+    src: apt-refresh.service.j2
+    dest: /etc/systemd/system/apt-refresh.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  when: base_apt_refresh_enabled
+
+- name: Install apt refresh timer unit
+  ansible.builtin.template:
+    src: apt-refresh.timer.j2
+    dest: /etc/systemd/system/apt-refresh.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  when: base_apt_refresh_enabled
+
 - name: Install apt maintenance timer unit
   ansible.builtin.template:
     src: apt-maintenance.timer.j2
@@ -129,11 +211,32 @@
   notify: Reload systemd
   when: base_apt_maintenance_enabled
 
+- name: Reload systemd before managing timers
+  ansible.builtin.meta: flush_handlers
+
+# systemd timers are the steady-state entry point for this repo. The bootstrap
+# script installs the first wrapper, but the role keeps the installed units and
+# helper scripts in sync on later runs.
 - name: Enable ansible-pull timer
   ansible.builtin.systemd_service:
     name: ansible-pull.timer
     enabled: true
     state: started
+
+- name: Enable apt refresh timer
+  ansible.builtin.systemd_service:
+    name: apt-refresh.timer
+    enabled: true
+    state: started
+  when: base_apt_refresh_enabled
+
+- name: Disable apt refresh timer when not wanted
+  ansible.builtin.systemd_service:
+    name: apt-refresh.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not base_apt_refresh_enabled
 
 - name: Enable apt maintenance timer
   ansible.builtin.systemd_service:
@@ -151,6 +254,8 @@
   when: not base_apt_maintenance_enabled
 
 - name: Configure APT periodic settings
+  # Package-list refresh stays disabled here because apt-refresh.timer runs
+  # `apt-get update` hourly outside the day-based APT::Periodic mechanism.
   ansible.builtin.copy:
     dest: /etc/apt/apt.conf.d/20auto-upgrades
     owner: root
@@ -185,6 +290,15 @@
     state: present
   loop: "{{ base_workstation_extra_users }}"
 
+- name: Add local users to sudo group
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: sudo
+    append: true
+  loop: "{{ base_local_sudo_users }}"
+
+# Keep the HHMI-specific identity flow in its own task file so the workstation
+# baseline stays readable and AD changes are easier to review in one place.
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool

@@ -1,0 +1,40 @@
+---
+# These hooks are intentionally local/system-based so they use the same pinned
+# toolchain and shell utilities that contributors install for day-to-day work.
+repos:
+  - repo: local
+    hooks:
+      - id: yamllint
+        name: yamllint
+        # Limit linting to tracked YAML files so repo-local virtualenvs and
+        # other generated directories do not pollute the results.
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" &&
+          git ls-files "*.yml" "*.yaml" | xargs yamllint'
+        language: system
+        pass_filenames: false
+      - id: ansible-lint
+        name: ansible-lint
+        # Keep Ansible temp/cache state inside the repo so checks work even in
+        # restricted environments where the default home-directory paths fail.
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" && mkdir -p .ansible/tmp
+          && ANSIBLE_HOME=.ansible
+          ANSIBLE_LOCAL_TEMP=.ansible/tmp ansible-lint playbooks/workstation.yml'
+        language: system
+        pass_filenames: false
+      - id: ansible-syntax-check
+        name: ansible syntax check
+        # Mirror the same repo-local Ansible temp layout used by ansible-lint.
+        entry: >-
+          bash -lc 'export PATH="$PWD/.venv/bin:$PATH" && mkdir -p .ansible/tmp
+          && ANSIBLE_HOME=.ansible
+          ANSIBLE_LOCAL_TEMP=.ansible/tmp ansible-playbook --syntax-check
+          --inventory inventory/hosts.yml playbooks/workstation.yml'
+        language: system
+        pass_filenames: false
+      - id: shellcheck
+        name: shellcheck
+        entry: bash -lc 'shellcheck scripts/*.sh'
+        language: system
+        pass_filenames: false

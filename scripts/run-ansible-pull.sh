@@ -11,7 +11,10 @@ HOSTNAME_FQDN=""
 RUN_LOG=""
 RUNTIME_INVENTORY=""
 LOCK_FILE=""
+TARGET_HOST=""
+ANSIBLE_PLAYBOOK_BIN=""
 PLAYBOOK_ARGS=()
+RUN_STATUS="starting"
 
 # Load configured pull settings from /etc/ansible/pull.env.
 load_environment() {
@@ -21,6 +24,8 @@ load_environment() {
   fi
 
   set -a
+  # shellcheck disable=SC1091
+  # shellcheck source=/etc/ansible/pull.env
   source "${ENV_FILE}"
   set +a
 }
@@ -32,12 +37,92 @@ prepare_runtime_context() {
   HOSTNAME_SHORT="$(hostname -s)"
   HOSTNAME_FQDN="$(hostname -f 2>/dev/null || hostname)"
   RUN_LOG="${LOG_DIR}/ansible-pull-${HOSTNAME_SHORT}.log"
-  RUNTIME_INVENTORY="/etc/ansible/pull-inventory.yml"
+  RUNTIME_INVENTORY="${DEST}/inventory/runtime-hosts.yml"
   LOCK_FILE="/var/lock/ansible-pull.lock"
+  TARGET_HOST="${HOSTNAME_SHORT}"
+  ANSIBLE_PLAYBOOK_BIN="${ANSIBLE_PLAYBOOK_BIN:-$(command -v ansible-playbook || true)}"
 
+  if [[ -z "${ANSIBLE_PLAYBOOK_BIN}" ]]; then
+    echo "ansible-playbook was not found in PATH" >&2
+    exit 1
+  fi
+}
+
+# Duplicate output to the per-host logfile and stdout/stderr so systemd can
+# capture the same stream in journald.
+setup_logging() {
+  touch "${RUN_LOG}"
+  exec > >(tee -a "${RUN_LOG}") 2>&1
+}
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+notify_slack() {
+  local status="$1"
+  local msg="$2"
+  
+  if [[ -z "${SLACK_WEBHOOK_URL:-}" ]]; then
+    return
+  fi
+
+  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-true}" != "true" ]]; then
+    log "Skipping Slack notification for success (SLACK_NOTIFY_SUCCESS is not true)."
+    return
+  fi
+
+  log "Sending Slack notification (status: ${status})..."
+
+  local color="#36a64f"
+  if [[ "${status}" != "success" ]]; then
+    color="#ff0000"
+  fi
+
+  local payload
+  payload="$(cat <<EOF
+{
+  "attachments": [
+    {
+      "color": "${color}",
+      "title": "ansible-pull on ${HOSTNAME_SHORT}",
+      "text": "${msg}"
+    }
+  ]
+}
+EOF
+)"
+
+  curl -sS -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}" || log "Warning: Failed to send Slack notification."
+}
+
+finish() {
+  local exit_code=$?
+
+  case "${RUN_STATUS}" in
+    success)
+      log "Completed ansible-pull run successfully."
+      notify_slack "success" "Completed ansible-pull run successfully on branch ${BRANCH:-unknown}."
+      ;;
+    locked)
+      log "Skipped ansible-pull run because another run is already in progress."
+      ;;
+    *)
+      if [[ "${exit_code}" -eq 0 ]]; then
+        log "Completed ansible-pull run."
+        notify_slack "success" "Completed ansible-pull run on branch ${BRANCH:-unknown}."
+      else
+        log "ansible-pull run failed with exit code ${exit_code}."
+        notify_slack "failed" "ansible-pull run failed with exit code ${exit_code}."
+      fi
+      ;;
+  esac
+}
+
+build_playbook_args() {
   PLAYBOOK_ARGS=(
     --inventory "${RUNTIME_INVENTORY}"
-    --limit localhost
+    --limit "${TARGET_HOST}"
     -e ansible_python_interpreter=/usr/bin/python3
   )
 
@@ -48,6 +133,8 @@ prepare_runtime_context() {
 
 # Build a local inventory that can match localhost/hostname/FQDN host_vars.
 write_runtime_inventory() {
+  mkdir -p "$(dirname "${RUNTIME_INVENTORY}")"
+
   cat > "${RUNTIME_INVENTORY}" <<EOF
 all:
   hosts:
@@ -63,14 +150,24 @@ all:
 EOF
 }
 
+# Select the inventory host that should receive host_vars for this machine.
+select_target_host() {
+  if [[ -f "${DEST}/inventory/host_vars/${HOSTNAME_SHORT}.yml" ]]; then
+    TARGET_HOST="${HOSTNAME_SHORT}"
+  elif [[ -f "${DEST}/inventory/host_vars/${HOSTNAME_FQDN}.yml" ]]; then
+    TARGET_HOST="${HOSTNAME_FQDN}"
+  fi
+
+  log "Using runtime inventory host '${TARGET_HOST}' for host_vars resolution."
+}
+
 # Prevent overlapping runs from timer/manual invocations.
 acquire_lock_or_exit() {
   exec 9>"${LOCK_FILE}"
 
   if ! flock -n 9; then
-    {
-      echo "Another ansible-pull run is already in progress. Exiting."
-    } >> "${RUN_LOG}"
+    RUN_STATUS="locked"
+    log "Another ansible-pull run is already in progress. Exiting."
     exit 0
   fi
 }
@@ -79,9 +176,15 @@ acquire_lock_or_exit() {
 sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
     rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
-    git -C "${DEST}" fetch origin "${BRANCH}"
-    git -C "${DEST}" checkout "${BRANCH}"
+    if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
+      git -C "${DEST}" remote set-url origin "${REPO_URL}"
+    else
+      git -C "${DEST}" remote add origin "${REPO_URL}"
+    fi
+    git -C "${DEST}" fetch --prune origin "${BRANCH}"
+    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
     git -C "${DEST}" reset --hard "origin/${BRANCH}"
+    git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
     git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
@@ -92,7 +195,7 @@ sync_repository_checkout() {
 run_playbook() {
   cd "${DEST}"
 
-  /usr/bin/ansible-playbook \
+  "${ANSIBLE_PLAYBOOK_BIN}" \
     "${PLAYBOOK_ARGS[@]}" \
     "${PLAYBOOK}" "$@"
 }
@@ -101,14 +204,17 @@ run_playbook() {
 main() {
   load_environment
   prepare_runtime_context
-  write_runtime_inventory
+  setup_logging
+  trap finish EXIT
   acquire_lock_or_exit
 
-  {
-    echo "Starting Ansible Pull at $(date '+%Y-%m-%d %H:%M:%S')"
-    sync_repository_checkout
-    run_playbook "$@"
-  } >> "${RUN_LOG}" 2>&1
+  log "Starting ansible-pull run for host '${HOSTNAME_SHORT}' on branch '${BRANCH}'."
+  sync_repository_checkout
+  write_runtime_inventory
+  select_target_host
+  build_playbook_args
+  run_playbook "$@"
+  RUN_STATUS="success"
 }
 
 main "$@"

@@ -16,15 +16,16 @@ Assume the result is `ubuntu-test-laptop`.
 
 ## 2. Set the shared baseline in this repo
 
-Edit [vars/baseline.yml](../vars/baseline.yml) for what every Ubuntu workstation should get.
+Edit [inventory/group_vars/all.yml](../inventory/group_vars/all.yml) for what every Ubuntu workstation should get.
 
 Recommended shared baseline:
 
 - keep unattended upgrades enabled
+- keep hourly APT package list refresh enabled
 - keep `base_apt_maintenance_enabled: false`
 - keep the shared package list small and intentional
 - keep unattended upgrades security-only
-- keep `base_workstation_update_package_lists_days: 30`
+- keep `base_workstation_update_package_lists_days: 0`
 - keep `base_workstation_unattended_upgrade_days: 30`
 
 ## 3. Create a host-specific vars file only if this machine is special
@@ -41,7 +42,6 @@ Then edit it to match what you want on that machine.
 
 - Example exception cases:
 
-- include `openssh-server` only if that machine should accept SSH
 - add one-off packages like `tailscale`
 - add one-off admin tools on a single host
 
@@ -49,8 +49,8 @@ Preferred host override style:
 
 ```yaml
 base_workstation_extra_packages:
-  - openssh-server
-  - tailscale
+  - htop
+  - nload
 ```
 
 That appends packages to the shared baseline instead of replacing the whole list.
@@ -60,7 +60,7 @@ That appends packages to the shared baseline instead of replacing the whole list
 From this repo:
 
 ```bash
-git add vars/baseline.yml inventory/host_vars/ubuntu-test-laptop.yml
+git add inventory/group_vars/all.yml inventory/host_vars/ubuntu-test-laptop.yml
 git commit -m "Set workstation baseline"
 git push
 ```
@@ -78,6 +78,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper, runs the playbook once, and enables the timer.
+During bootstrap you will be prompted for an AD username and hidden password for the required `hhmi.org` domain join, and you can also enter a comma-separated list of existing local users that should be added to the `sudo` group as the final bootstrap action.
 
 ## 6. Verify the first run
 
@@ -91,8 +92,11 @@ systemctl list-timers ansible-pull.timer
 Check the most recent log:
 
 ```bash
+journalctl -u ansible-pull.service -n 100 --no-pager
 tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
+
+Both commands should show the same run stream because the wrapper writes to the logfile and stdout/stderr for systemd.
 
 Check unattended upgrade settings:
 
@@ -114,4 +118,4 @@ sudo /usr/local/sbin/run-ansible-pull
 - If you do not create a host file, the machine will use only the shared baseline.
 - If the host file name does not match `hostname -s`, host-specific vars will not load.
 - If the machine uses Firefox as a snap, browser updates are not controlled by the current APT tasks.
-- If you do not want inbound SSH, remove `openssh-server` from the host file.
+- If you do not want inbound SSH on every workstation, move `openssh-server` out of `inventory/group_vars/all.yml` and add it back only on the hosts that need it.
