@@ -42,6 +42,7 @@
       }}
     state: present
     update_cache: true
+    cache_valid_time: 3600
 
 # The base role also manages the local ansible-pull runtime so the workstation
 # can keep converging itself after the first bootstrap run.
@@ -69,6 +70,23 @@
       PLAYBOOK={{ base_ansible_pull_playbook }}
       DEST={{ base_ansible_pull_directory }}
       LOG_DIR={{ base_ansible_pull_log_dir }}
+
+- name: Install ansible-pull logrotate configuration
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/ansible-pull
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {{ base_ansible_pull_log_dir }}/*.log {
+          weekly
+          rotate 4
+          compress
+          delaycompress
+          missingok
+          notifempty
+          create 0644 root root
+      }
 
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:

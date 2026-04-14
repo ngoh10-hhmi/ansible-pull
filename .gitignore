@@ -6,3 +6,6 @@ __pycache__/
 .pre-commit-cache/
 .venv/
 CLAUDE.md
+.vscode/
+.idea/
+*.swp
