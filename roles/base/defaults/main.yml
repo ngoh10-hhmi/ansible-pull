@@ -43,4 +43,6 @@ base_unattended_upgrade_origins_patterns:
 base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
   - "Only Ubuntu security updates are allowed for unattended upgrades."
-  - "Firefox on modern Ubuntu is typically a snap and is not managed by these APT tasks."
+  - >-
+    Firefox on modern Ubuntu is typically a snap and is not managed by these
+    APT tasks.
