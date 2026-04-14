@@ -74,11 +74,11 @@ def configure_pull_environment(
         encoding="utf-8",
     )
     bootstrap_lines = [
-        f"base_ansible_pull_repo_url: {repo_url}",
-        f"base_ansible_pull_branch: {TEST_BRANCH}",
-        "base_ansible_pull_playbook: playbooks/workstation.yml",
-        f"base_ansible_pull_directory: {dest}",
-        f"base_ansible_pull_log_dir: {log_dir}",
+        f"base_ansible_pull_repo_url: \"{repo_url}\"",
+        f"base_ansible_pull_branch: \"{TEST_BRANCH}\"",
+        "base_ansible_pull_playbook: \"playbooks/workstation.yml\"",
+        f"base_ansible_pull_directory: \"{dest}\"",
+        f"base_ansible_pull_log_dir: \"{log_dir}\"",
         "base_ad_enroll: false",
     ]
     for key, value in (extra_vars or {}).items():
@@ -371,8 +371,8 @@ def test_branch_switch_updates_pull_settings_without_running_immediately() -> No
         bootstrap_vars = Path("/etc/ansible/bootstrap-vars.yml").read_text(encoding="utf-8")
         assert f"REPO_URL={repo_two}" in pull_env
         assert f"BRANCH={TEST_BRANCH}" in pull_env
-        assert f"base_ansible_pull_repo_url: {repo_two}" in bootstrap_vars
-        assert f"base_ansible_pull_branch: {TEST_BRANCH}" in bootstrap_vars
+        assert f"base_ansible_pull_repo_url: \"{repo_two}\"" in bootstrap_vars
+        assert f"base_ansible_pull_branch: \"{TEST_BRANCH}\"" in bootstrap_vars
 
         rerun_log_text = run_log.read_text(encoding="utf-8")
         assert rerun_log_text.count("Starting ansible-pull run") == 1
