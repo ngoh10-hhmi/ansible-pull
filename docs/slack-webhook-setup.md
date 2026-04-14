@@ -47,5 +47,11 @@ sudo bash -c 'echo "SLACK_WEBHOOK_URL=\"https://hooks.slack.com/services/...\"" 
 
 ### Configuring Alert Behavior
 Webhook integrations are configured natively within the identical `/etc/ansible/pull.env` runtime file.
-- The wrapper always alerts on play failures.
-- To disable constant success pings every 15 minutes, add `SLACK_NOTIFY_SUCCESS=false` to `/etc/ansible/pull.env`.
+- **Failures**: The wrapper always alerts on play failures.
+- **Successes**: The wrapper defaults to alerting on successes (`SLACK_NOTIFY_SUCCESS=true`) to provide a "heartbeat" during initial deployment.
+- **Muting**: To disable constant success pings every 15 minutes, add `SLACK_NOTIFY_SUCCESS=false` to `/etc/ansible/pull.env`.
+
+> [!NOTE]
+> **Activation Delay**: When you first add a Webhook URL to an existing machine, you may need to run `sudo /usr/local/sbin/run-ansible-pull` **twice**. 
+> 
+> The first run pulls the new notification logic from GitHub and installs it to the disk, but the process already running in memory won't have the new `notify_slack` function yet. The second run loads the new script from disk and will successfully fire the notification.
