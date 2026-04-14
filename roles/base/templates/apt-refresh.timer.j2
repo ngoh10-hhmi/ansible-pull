@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule workstation apt package list refresh
+
+[Timer]
+OnCalendar={{ base_apt_refresh_timer_on_calendar }}
+RandomizedDelaySec={{ base_apt_refresh_randomized_delay_sec }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

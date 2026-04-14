@@ -1,0 +1,58 @@
+---
+# This file is the shared workstation baseline for every managed machine.
+# Values here override role defaults and should hold the normal fleet policy.
+# Use `inventory/host_vars/<hostname>.yml` only for machine-specific
+# exceptions.
+base_workstation_base_packages:
+  - ca-certificates
+  - curl
+  - git
+  - python3
+  - python3-apt
+  - rsync
+  - sudo
+  - unattended-upgrades
+  - wget
+  - sssd
+  - sssd-common
+  - sssd-tools
+  - openssh-server
+  - nfs-common
+  - adcli
+  - realmd
+  - krb5-user
+  - cifs-utils
+  - vim
+
+base_workstation_extra_packages: []
+
+base_workstation_remove_packages: []
+
+# Third-party APT sources are optional. The base role reads these lists and
+# installs keys/repos before package installation.
+# Examples of repo entries live just below for copy/paste reference.
+base_workstation_ppas: []
+# Examples (uncomment to use):
+# - name: vscode
+#   key_url: "https://packages.microsoft.com/keys/microsoft.asc"
+#   key_filename: "microsoft.asc"
+#   repo: >-
+#     deb [arch=amd64,arm64,armhf
+#     signed-by=/etc/apt/keyrings/microsoft.asc]
+#     https://packages.microsoft.com/repos/code stable main
+# - name: google-chrome
+#   key_url: "https://dl.google.com/linux/linux_signing_key.pub"
+#   key_filename: "google-chrome.asc"
+#   repo: >-
+#     deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc]
+#     http://dl.google.com/linux/chrome/deb/ stable main
+base_workstation_apt_repos: []
+
+# Keep the hourly metadata refresh enabled through apt-refresh.timer.
+base_apt_refresh_enabled: true
+base_apt_maintenance_enabled: false
+base_workstation_enable_unattended_upgrades: true
+# The day-based APT periodic refresh stays off because systemd handles it
+# hourly.
+base_workstation_update_package_lists_days: 0
+base_workstation_unattended_upgrade_days: 30

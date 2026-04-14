@@ -1,21 +1,18 @@
 ---
-base_workstation_base_packages:
-  - ca-certificates
-  - curl
-  - git
-  - python3
-  - python3-apt
-  - rsync
-  - sudo
-  - unattended-upgrades
-  - wget
-
+# These are safe fallback values for the base role.
+# The active shared workstation baseline lives in inventory/group_vars/all.yml,
+# and machine-local bootstrap values can override both through
+# /etc/ansible/bootstrap-vars.yml.
+base_workstation_base_packages: []
 base_workstation_extra_packages: []
 
 base_workstation_ppas: []
 base_workstation_apt_repos: []
 
 base_workstation_extra_users: []
+base_local_sudo_users: []
+# AD enrollment defaults off here so the role remains safe by default.
+# Bootstrap and inventory decide when a workstation should actually enroll.
 base_ad_enroll: false
 
 base_ansible_pull_repo_url: "https://github.com/ngoh10-hhmi/ansible-pull.git"
@@ -23,14 +20,21 @@ base_ansible_pull_branch: "main"
 base_ansible_pull_playbook: "playbooks/workstation.yml"
 base_ansible_pull_directory: "/var/lib/ansible-pull"
 base_ansible_pull_log_dir: "/var/log/ansible-pull"
-base_ansible_pull_timer_on_calendar: "daily"
-base_ansible_pull_randomized_delay_sec: "15m"
+# Check in every 15 minutes but keep a small spread across the fleet.
+base_ansible_pull_timer_on_calendar: "*:0/15"
+base_ansible_pull_randomized_delay_sec: "2m"
+
+# Hourly apt metadata refresh is driven by a dedicated systemd timer.
+base_apt_refresh_enabled: true
+base_apt_refresh_timer_on_calendar: "hourly"
+base_apt_refresh_randomized_delay_sec: "0"
 
 base_apt_maintenance_enabled: false
 base_apt_maintenance_timer_on_calendar: "Sat *-*-* 03:00:00"
 
 base_workstation_enable_unattended_upgrades: true
-base_workstation_update_package_lists_days: 30
+# Disable APT::Periodic list refresh because apt-refresh.timer owns that path.
+base_workstation_update_package_lists_days: 0
 base_workstation_unattended_upgrade_days: 30
 
 base_unattended_upgrade_origins_patterns:
@@ -39,4 +43,6 @@ base_unattended_upgrade_origins_patterns:
 base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
   - "Only Ubuntu security updates are allowed for unattended upgrades."
-  - "Firefox on modern Ubuntu is typically a snap and is not managed by these APT tasks."
+  - >-
+    Firefox on modern Ubuntu is typically a snap and is not managed by these
+    APT tasks.

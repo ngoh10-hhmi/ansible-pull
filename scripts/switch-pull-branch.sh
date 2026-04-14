@@ -72,6 +72,8 @@ load_existing_pull_env() {
   fi
 
   set -a
+  # shellcheck disable=SC1091
+  # shellcheck source=/etc/ansible/pull.env
   source "${ENV_FILE}"
   set +a
 }
@@ -90,6 +92,8 @@ BRANCH=${BRANCH}
 PLAYBOOK=${PLAYBOOK}
 DEST=${DEST}
 LOG_DIR=${LOG_DIR}
+SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
+SLACK_NOTIFY_SUCCESS=${SLACK_NOTIFY_SUCCESS:-true}
 EOF
   chmod 0600 "${ENV_FILE}"
 }
@@ -99,11 +103,11 @@ write_bootstrap_vars() {
   tmp_file="$(mktemp)"
 
   {
-    echo "base_ansible_pull_repo_url: ${REPO_URL}"
-    echo "base_ansible_pull_branch: ${BRANCH}"
-    echo "base_ansible_pull_playbook: ${PLAYBOOK}"
-    echo "base_ansible_pull_directory: ${DEST}"
-    echo "base_ansible_pull_log_dir: ${LOG_DIR}"
+    echo "base_ansible_pull_repo_url: \"${REPO_URL}\""
+    echo "base_ansible_pull_branch: \"${BRANCH}\""
+    echo "base_ansible_pull_playbook: \"${PLAYBOOK}\""
+    echo "base_ansible_pull_directory: \"${DEST}\""
+    echo "base_ansible_pull_log_dir: \"${LOG_DIR}\""
 
     if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
       awk '
