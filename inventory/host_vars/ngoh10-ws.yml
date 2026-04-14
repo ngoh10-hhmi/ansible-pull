@@ -1,3 +1,6 @@
 ---
 base_workstation_extra_packages:
   - nload
+
+base_workstation_remove_packages:
+  - google-chrome-stable

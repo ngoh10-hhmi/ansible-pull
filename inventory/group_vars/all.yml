@@ -25,6 +25,8 @@ base_workstation_base_packages:
 
 base_workstation_extra_packages: []
 
+base_workstation_remove_packages: []
+
 # Third-party APT sources are optional. The base role reads these lists and
 # installs keys/repos before package installation.
 # Examples of repo entries live just below for copy/paste reference.

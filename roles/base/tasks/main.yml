@@ -61,6 +61,12 @@
         state: present
         update_cache: true
 
+- name: Purge explicitly removed packages
+  ansible.builtin.apt:
+    name: "{{ base_workstation_remove_packages }}"
+    state: absent
+  when: (base_workstation_remove_packages | default([])) | length > 0
+
 # The base role also manages the local ansible-pull runtime so the workstation
 # can keep converging itself after the first bootstrap run.
 - name: Ensure ansible-pull runtime directories exist
