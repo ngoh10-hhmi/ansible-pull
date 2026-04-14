@@ -67,9 +67,12 @@ notify_slack() {
     return
   fi
 
-  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-false}" != "true" ]]; then
+  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-true}" != "true" ]]; then
+    log "Skipping Slack notification for success (SLACK_NOTIFY_SUCCESS is not true)."
     return
   fi
+
+  log "Sending Slack notification (status: ${status})..."
 
   local color="#36a64f"
   if [[ "${status}" != "success" ]]; then
@@ -90,7 +93,7 @@ notify_slack() {
 EOF
 )"
 
-  curl -s -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}" || true
+  curl -sS -X POST -H 'Content-type: application/json' --data "${payload}" "${SLACK_WEBHOOK_URL}" || log "Warning: Failed to send Slack notification."
 }
 
 finish() {
