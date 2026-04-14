@@ -2,4 +2,10 @@
 .ansible/
 .DS_Store
 .cache/
+__pycache__/
+.pre-commit-cache/
 .venv/
+CLAUDE.md
+.vscode/
+.idea/
+*.swp
