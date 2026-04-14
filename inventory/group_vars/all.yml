@@ -22,6 +22,7 @@ base_workstation_base_packages:
   - krb5-user
   - cifs-utils
   - vim
+  - google-chrome-stable
 
 base_workstation_extra_packages: []
 
@@ -30,15 +31,15 @@ base_workstation_extra_packages: []
 # Examples of repo entries live just below for copy/paste reference.
 base_workstation_ppas: []
 # Examples (uncomment to use):
-# - name: google-chrome
-#   key_url: "https://dl.google.com/linux/linux_signing_key.pub"
-#   key_filename: "google-chrome.asc"
-#   repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
 # - name: vscode
 #   key_url: "https://packages.microsoft.com/keys/microsoft.asc"
 #   key_filename: "microsoft.asc"
 #   repo: "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/keyrings/microsoft.asc] https://packages.microsoft.com/repos/code stable main"
-base_workstation_apt_repos: []
+base_workstation_apt_repos:
+  - name: google-chrome
+    key_url: "https://dl.google.com/linux/linux_signing_key.pub"
+    key_filename: "google-chrome.asc"
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
 
 # Keep the hourly metadata refresh enabled through apt-refresh.timer.
 base_apt_refresh_enabled: true
