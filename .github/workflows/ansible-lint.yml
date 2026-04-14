@@ -27,6 +27,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
 
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ env.pythonLocation }}|${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit checks
         run: pre-commit run --all-files --show-diff-on-failure
 

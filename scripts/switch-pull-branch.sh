@@ -101,11 +101,11 @@ write_bootstrap_vars() {
   tmp_file="$(mktemp)"
 
   {
-    echo "base_ansible_pull_repo_url: ${REPO_URL}"
-    echo "base_ansible_pull_branch: ${BRANCH}"
-    echo "base_ansible_pull_playbook: ${PLAYBOOK}"
-    echo "base_ansible_pull_directory: ${DEST}"
-    echo "base_ansible_pull_log_dir: ${LOG_DIR}"
+    echo "base_ansible_pull_repo_url: \"${REPO_URL}\""
+    echo "base_ansible_pull_branch: \"${BRANCH}\""
+    echo "base_ansible_pull_playbook: \"${PLAYBOOK}\""
+    echo "base_ansible_pull_directory: \"${DEST}\""
+    echo "base_ansible_pull_log_dir: \"${LOG_DIR}\""
 
     if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
       awk '
