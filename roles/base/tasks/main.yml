@@ -35,6 +35,9 @@
   loop: "{{ base_workstation_ppas | default([]) }}"
   notify: Force APT cache update
 
+- name: Flush handlers to update APT cache
+  ansible.builtin.meta: flush_handlers
+
 - name: Install base Ubuntu packages
   ansible.builtin.apt:
     name: >-
