@@ -45,6 +45,8 @@ If you want a reusable template for compacting a long coding session into a new
 chat, read [docs/session-handoff-template.md](docs/session-handoff-template.md).
 If you need operator or local troubleshooting steps, read
 [docs/troubleshooting.md](docs/troubleshooting.md).
+If you want a simple Git worktree layout for `testing` and `main`, read
+[docs/worktree-setup.md](docs/worktree-setup.md).
 
 ## Repository layout
 
@@ -54,6 +56,7 @@ If you need operator or local troubleshooting steps, read
 - `docs/session-handoff-template.md`: reusable chat compaction and handoff guide
 - `docs/troubleshooting.md`: local and workstation troubleshooting steps
 - `docs/variable-map.md`: quick reference for the main variables
+- `docs/worktree-setup.md`: recommended Git worktree layout for this repo
 - `Makefile`: common local development commands
 - `.python-version`: expected local Python version for developer tooling
 - `playbooks/workstation.yml`: main workstation playbook
