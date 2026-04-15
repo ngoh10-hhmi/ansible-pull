@@ -22,39 +22,83 @@ This repo manages Ubuntu workstations with `ansible-pull`.
 - `inventory/host_vars/<hostname>.yml`: host-specific exceptions
 - `tests/integration/test_workstation.py`: current integration coverage
 
+## Orientation
+
+If you need a fast repo walkthrough, start here:
+
+- `docs/how-it-works.md`: plain-English explanation of bootstrap, pull runs, and role structure
+- `docs/dev-setup.md`: repo-local developer environment and check workflow
+- `docs/variable-map.md`: where the main variables are usually set and consumed
+- `docs/troubleshooting.md`: local and workstation troubleshooting steps
+- `docs/worktree-setup.md`: recommended `testing` plus `main` Git worktree layout
+- `docs/slack-webhook-setup.md`: Slack webhook setup and behavior
+
 ## Validation
 
-Install the pinned toolchain:
+Preferred local setup:
 
 ```bash
+./scripts/setup-dev.sh
+make doctor
+```
+
+Manual toolchain install if you are not using the helper:
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -U pip
 python -m pip install -r requirements-dev.txt
 ```
 
 Run the same local checks CI runs:
 
 ```bash
-pre-commit run --all-files
+PRE_COMMIT_HOME=.pre-commit-cache pre-commit run --all-files
+```
+
+Equivalent Make target:
+
+```bash
+make lint
 ```
 
 Useful single checks:
 
 ```bash
+pre-commit run --all-files
 pre-commit run yamllint
 pre-commit run ansible-lint
 pre-commit run ansible-syntax-check
 pre-commit run shellcheck
 ```
 
-Integration tests require root on a bootstrapped Ubuntu host:
+Integration tests require root on a converged Ubuntu host. The common local path
+is a bootstrapped workstation:
 
 ```bash
-sudo -E env "PATH=$PATH" python -m pytest -q tests/integration
+make integration
 ```
 
 CI currently runs:
 
 - pre-commit checks on every PR and on pushes to `main` and `testing`
 - integration coverage on Ubuntu 22.04 and 24.04
+
+Common local workflow:
+
+```bash
+./scripts/setup-dev.sh
+make doctor
+make lint
+```
+
+Dependency and CI-tooling changes usually involve:
+
+- `requirements-ci.txt`
+- `requirements-dev.txt`
+- `.github/workflows/ansible-lint.yml`
+- `.pre-commit-config.yaml`
 
 ## Operational model
 
@@ -63,10 +107,11 @@ Bootstrap flow:
 1. `scripts/bootstrap-ubuntu.sh` installs bootstrap dependencies.
 2. It writes `/etc/ansible/pull.env`.
 3. It clones the repo into `/var/lib/ansible-pull`.
-4. It prompts for hostname, machine type, and optional sudo users.
-5. It writes `/etc/ansible/bootstrap-vars.yml`.
-6. It runs `/usr/local/sbin/run-ansible-pull`.
-7. It then collects AD credentials, performs domain enrollment, enables the timer, and does a final package upgrade.
+4. It installs `/usr/local/sbin/run-ansible-pull`.
+5. It prompts for hostname, machine type, and optional sudo users.
+6. It writes `/etc/ansible/bootstrap-vars.yml`.
+7. It runs `/usr/local/sbin/run-ansible-pull`.
+8. It then collects AD credentials, performs the AD enrollment converge, enables the timer, does a final package upgrade, and persists the final bootstrap vars.
 
 Bootstrap also supports optional Slack notification settings through
 `--slack-webhook` and `--slack-notify-success`, which are persisted into
@@ -78,8 +123,8 @@ Scheduled run flow:
 2. The service runs `/usr/local/sbin/run-ansible-pull`.
 3. The wrapper loads `/etc/ansible/pull.env`, acquires a `flock`, syncs the checkout, writes a runtime inventory, and runs `ansible-playbook`.
 4. If `SLACK_WEBHOOK_URL` is set, the wrapper can send Slack notifications on
-   failures and, by default, on successes too unless
-   `SLACK_NOTIFY_SUCCESS=false`.
+   failures. Success notifications are opt-in through
+   `SLACK_NOTIFY_SUCCESS=true`.
 
 Variable precedence:
 
@@ -94,6 +139,12 @@ Inventory behavior:
 - `inventory/hosts.yml` is mainly for CI and syntax checks.
 - Real pull runs generate `${DEST}/inventory/runtime-hosts.yml`.
 - Host-specific vars resolve against the machine's short hostname or FQDN during runtime.
+
+Recommended Git workflow:
+
+- Keep active changes in a `testing` worktree.
+- Keep a separate clean `main` worktree for reference and merge comparison.
+- Use temporary feature worktrees only for isolated or risky changes.
 
 ## Invariants and gotchas
 
