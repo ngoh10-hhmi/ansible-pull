@@ -79,6 +79,37 @@ So the playbook is simple, but the wrapper around it is important. The wrapper
 decides which checkout to run, which host identity to use, and which persisted
 bootstrap values override inventory defaults.
 
+## What Happens When A Task Fails
+
+The default behavior is fail fast.
+
+If one Ansible task fails for the workstation, later tasks in the same play
+normally do not run for that machine. The wrapper then exits nonzero, logs the
+failure, and can send a Slack notification if that is configured.
+
+That means a failure in an early area such as package installation usually
+prevents later areas such as timer management, AD configuration, or sudo-group
+updates from running during that same converge.
+
+There are a few intentional exceptions:
+
+- some tasks use `block` plus `rescue` to retry in a controlled way
+- some tasks set `failed_when: false` when a best-effort result is acceptable
+- some handlers are forced early with `meta: flush_handlers` when later tasks
+  depend on their side effects
+
+Examples in this repo:
+
+- package installation retries once with a forceful APT cache refresh
+- optional timer-disable tasks do not fail the whole run if the timer is
+  already absent or stopped
+- SSSD is restarted before later sudo-user lookups that depend on directory
+  identities resolving correctly
+
+This is normal Ansible behavior and is usually the safer default for workstation
+management. Continuing blindly after a real failure can leave the machine in a
+half-converged state.
+
 ## How The Ansible Layout Works
 
 The main playbook is intentionally small. It applies one role:
