@@ -67,7 +67,7 @@ notify_slack() {
     return
   fi
 
-  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-true}" != "true" ]]; then
+  if [[ "${status}" == "success" && "${SLACK_NOTIFY_SUCCESS:-false}" != "true" ]]; then
     log "Skipping Slack notification for success (SLACK_NOTIFY_SUCCESS is not true)."
     return
   fi

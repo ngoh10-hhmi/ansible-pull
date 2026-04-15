@@ -39,6 +39,15 @@ sudo ./bootstrap-ubuntu.sh \
   --slack-webhook "https://hooks.slack.com/services/..."
 ```
 
+If you also want success notifications, opt in explicitly:
+```bash
+sudo ./bootstrap-ubuntu.sh \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
+  --branch main \
+  --slack-webhook "https://hooks.slack.com/services/..." \
+  --slack-notify-success true
+```
+
 ### Option B: On an Already Running Machine
 Append the environment variable directly into the un-tracked runtime file:
 ```bash
@@ -48,8 +57,8 @@ sudo bash -c 'echo "SLACK_WEBHOOK_URL=\"https://hooks.slack.com/services/...\"" 
 ### Configuring Alert Behavior
 Webhook integrations are configured natively within the identical `/etc/ansible/pull.env` runtime file.
 - **Failures**: The wrapper always alerts on play failures.
-- **Successes**: The wrapper defaults to alerting on successes (`SLACK_NOTIFY_SUCCESS=true`) to provide a "heartbeat" during initial deployment.
-- **Muting**: To disable constant success pings every 15 minutes, add `SLACK_NOTIFY_SUCCESS=false` to `/etc/ansible/pull.env`.
+- **Successes**: The wrapper skips success notifications by default (`SLACK_NOTIFY_SUCCESS=false`).
+- **Opt-in heartbeat**: To send success notifications too, set `SLACK_NOTIFY_SUCCESS=true` in `/etc/ansible/pull.env` or pass `--slack-notify-success true` during bootstrap.
 
 > [!NOTE]
 > **Activation Delay**: When you first add a Webhook URL to an existing machine, you may need to run `sudo /usr/local/sbin/run-ansible-pull` **twice**. 

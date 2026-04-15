@@ -114,6 +114,17 @@ sudo cat /etc/ansible/bootstrap-vars.yml
 
 Those files must stay aligned. `switch-pull-branch.sh` updates both.
 
+## Check Slack notification settings
+
+If Slack alerts are missing or too noisy, inspect the runtime settings:
+
+```bash
+sudo grep '^SLACK_' /etc/ansible/pull.env
+```
+
+By default, only failed runs notify Slack. Set `SLACK_NOTIFY_SUCCESS=true` if
+you want success notifications too.
+
 ## Common local check issues
 
 - `shellcheck` missing:

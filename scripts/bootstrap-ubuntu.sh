@@ -52,7 +52,7 @@ MACHINE_TYPE=""
 AD_JOIN_USER=""
 LOCAL_SUDO_USERS=()
 SLACK_WEBHOOK_URL=""
-SLACK_NOTIFY_SUCCESS="true"
+SLACK_NOTIFY_SUCCESS="false"
 
 # Parse CLI arguments into global script settings.
 parse_args() {
