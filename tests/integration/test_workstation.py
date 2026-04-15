@@ -92,11 +92,11 @@ def configure_pull_environment(
     Path("/etc/ansible/pull.env").write_text(
         "\n".join(
             [
-                f"REPO_URL={repo_url}",
-                f"BRANCH={TEST_BRANCH}",
-                "PLAYBOOK=playbooks/workstation.yml",
-                f"DEST={dest}",
-                f"LOG_DIR={log_dir}",
+                f'REPO_URL="{repo_url}"',
+                f'BRANCH="{TEST_BRANCH}"',
+                'PLAYBOOK="playbooks/workstation.yml"',
+                f'DEST="{dest}"',
+                f'LOG_DIR="{log_dir}"',
                 "",
             ]
         ),
@@ -545,8 +545,8 @@ def test_branch_switch_updates_pull_settings_without_running_immediately() -> No
 
         pull_env = Path("/etc/ansible/pull.env").read_text(encoding="utf-8")
         bootstrap_vars = Path("/etc/ansible/bootstrap-vars.yml").read_text(encoding="utf-8")
-        assert f"REPO_URL={repo_two}" in pull_env
-        assert f"BRANCH={TEST_BRANCH}" in pull_env
+        assert f'REPO_URL="{repo_two}"' in pull_env
+        assert f'BRANCH="{TEST_BRANCH}"' in pull_env
         assert f"base_ansible_pull_repo_url: \"{repo_two}\"" in bootstrap_vars
         assert f"base_ansible_pull_branch: \"{TEST_BRANCH}\"" in bootstrap_vars
 
