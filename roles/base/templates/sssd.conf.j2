@@ -1,6 +1,9 @@
 [sssd]
 domains = hhmi.org
 config_file_version = 2
+# services = nss, pam is omitted: modern SSSD (1.14+) enables nss and pam
+# implicitly when domains are configured, so the explicit line is unnecessary
+# and can cause warnings on some Ubuntu versions.
 #services = nss, pam
 
 [domain/hhmi.org]
@@ -12,13 +15,22 @@ ad_server = _srv_, jfdc1.hhmi.org
 backup_ad_server = 172.19.15.120, 172.19.15.10, 10.36.222.11
 {% endif %}
 cache_credentials = True
-dyndns_update = False 
-id_provider = ad 
+# dyndns_update disabled: workstations use DHCP-assigned DNS records managed
+# by the DHCP server, so having SSSD attempt to register DNS entries would
+# cause conflicts or failures on restricted DNS zones.
+dyndns_update = False
+id_provider = ad
 krb5_realm = HHMI.ORG
 krb5_renewable_lifetime = 7d
 krb5_renew_interval = 1h
 krb5_store_password_if_offline = True
+# ldap_id_mapping = False: use the UID/GID values stored in Active Directory
+# directly rather than generating them locally from the SID hash. This keeps
+# IDs stable and consistent across every machine in the domain.
 ldap_id_mapping = False
+# %u = username, %d = domain name (hhmi.org), so homes are /home/jdoe@hhmi.org
 override_homedir = /home/%u@%d
 realmd_tags = manages-system joined-with-adcli
+# use_fully_qualified_names = False allows users to log in as "jdoe" instead
+# of "jdoe@hhmi.org". Safe here because hhmi.org is the only configured domain.
 use_fully_qualified_names = False

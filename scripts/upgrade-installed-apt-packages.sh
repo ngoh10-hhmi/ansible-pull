@@ -55,6 +55,10 @@ fi
 
 installed_packages=()
 for package_name in "${requested_packages[@]}"; do
+  # dpkg-query -f='${Status}\n' returns a three-word status string.
+  # "install ok installed" means the package is fully installed and not
+  # pending removal. Other states (e.g. "deinstall ok config-files") mean
+  # the package has been removed and should not be included in the upgrade.
   if dpkg-query -W -f='${Status}\n' "${package_name}" 2>/dev/null | grep -qx 'install ok installed'; then
     installed_packages+=("${package_name}")
   fi
@@ -72,6 +76,11 @@ upgradable_packages=()
 skipped_packages=()
 
 for package_name in "${installed_packages[@]}"; do
+  # apt-cache policy prints "Candidate: <version>" for the best available
+  # version in the current package index. A value of "(none)" means no
+  # candidate exists in the configured APT sources (e.g. repo not yet
+  # refreshed, or package removed from upstream), so skip those to avoid
+  # a failed apt-get install call.
   candidate_version="$(
     apt-cache policy "${package_name}" \
       | awk '/Candidate:/ { print $2; exit }'
@@ -94,4 +103,10 @@ if [[ ${#upgradable_packages[@]} -eq 0 ]]; then
 fi
 
 echo "Upgrading installed ${LABEL} packages: ${upgradable_packages[*]}"
+# --only-upgrade tells apt-get to upgrade existing packages but never install
+# new ones. This ensures the timer only refreshes what is already on the
+# machine and cannot silently pull in unintended packages.
+# DPkg::Lock::Timeout=600 waits up to 10 minutes for the dpkg lock rather
+# than failing immediately if unattended-upgrades or another apt process is
+# running concurrently.
 apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=600 "${upgradable_packages[@]}"

@@ -72,6 +72,9 @@ load_existing_pull_env() {
     die "Missing ${ENV_FILE}. Run bootstrap first."
   fi
 
+  # set -a / set +a causes every variable assigned during the source to be
+  # automatically exported, making them available to child processes without
+  # explicit export statements.
   set -a
   # shellcheck disable=SC1091
   # shellcheck source=/etc/ansible/pull.env
@@ -106,6 +109,10 @@ write_bootstrap_vars() {
   tmp_file="$(mktemp)"
 
   {
+    # Write the five updated pull settings first, then append everything else
+    # from the existing bootstrap vars file with those five keys stripped out.
+    # This preserves host-specific values (hostname, machine_type, sudo users,
+    # AD settings, etc.) while updating only the repo/branch coordinates.
     echo "base_ansible_pull_repo_url: \"${REPO_URL}\""
     echo "base_ansible_pull_branch: \"${BRANCH}\""
     echo "base_ansible_pull_playbook: \"${PLAYBOOK}\""

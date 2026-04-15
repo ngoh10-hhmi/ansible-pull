@@ -38,6 +38,10 @@
 - name: Flush handlers to update APT cache
   ansible.builtin.meta: flush_handlers
 
+# The block/rescue pattern here handles a common edge case: when a new package
+# is added to the baseline after a long time between runs, the cached APT index
+# may not know about it yet and the install fails.  The rescue block forces a
+# full index refresh so the next attempt has current metadata.
 - name: Install base Ubuntu packages
   block:
     - name: Try installing packages with cached indexes
@@ -81,6 +85,10 @@
     - "{{ base_ansible_pull_directory }}"
     - "{{ base_ansible_pull_log_dir }}"
 
+# lineinfile is used here instead of a template so that the role only touches
+# the specific keys it manages (REPO_URL, BRANCH, etc.) and leaves any
+# operator-added values (e.g. SLACK_WEBHOOK_URL written by bootstrap or
+# switch-pull-branch.sh) intact across converge runs.
 - name: Install ansible-pull environment file
   ansible.builtin.lineinfile:
     path: /etc/ansible/pull.env
@@ -278,6 +286,9 @@
     mode: "0644"
   notify: Reload systemd
 
+# Flush handlers here so systemd is reloaded before the subsequent
+# systemd_service tasks try to enable or start the timer units.  Without this,
+# newly installed unit files would not be visible to systemctl yet.
 - name: Reload systemd before managing timers
   ansible.builtin.meta: flush_handlers
 

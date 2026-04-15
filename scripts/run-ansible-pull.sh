@@ -25,6 +25,10 @@ load_environment() {
     exit 1
   fi
 
+  # set -a / set +a automatically exports every variable assigned while the
+  # flag is active, so sourcing the env file makes REPO_URL, BRANCH, etc.
+  # available to child processes (e.g. ansible-playbook) without explicit
+  # export statements.
   set -a
   # shellcheck disable=SC1091
   # shellcheck source=/etc/ansible/pull.env
@@ -137,12 +141,18 @@ extract_block_from_last_match() {
     return 1
   fi
 
+  # grep -n produces "linenum:content"; tail -n 1 picks the last match in
+  # the file so we always surface the most recent failure, not an earlier one.
   matched_line="$(grep -n -E "${pattern}" "${RUN_LOG}" | tail -n 1 || true)"
   [[ -n "${matched_line}" ]] || return 1
 
+  # Strip everything from the first colon onward to get just the line number.
   start_line="${matched_line%%:*}"
   end_line="$((start_line + max_lines - 1))"
 
+  # Read up to max_lines from the match point, but stop early at the Ansible
+  # PLAY RECAP header or at the first blank line after line 1, whichever
+  # comes first — this keeps the excerpt tight and on-topic.
   sed -n "${start_line},${end_line}p" "${RUN_LOG}" | awk '
     /^PLAY RECAP/ { exit }
     NR > 1 && /^[[:space:]]*$/ { exit }
@@ -251,6 +261,9 @@ build_slack_payload() {
     color="#ff0000"
   fi
 
+  # Use an inline Python heredoc to produce the JSON payload so that special
+  # characters in the message (quotes, backslashes, newlines) are serialized
+  # correctly via json.dumps rather than manually shell-escaped.
   python3 - "${color}" "${title}" "${msg}" <<'PY'
 import json
 import sys
@@ -310,6 +323,11 @@ notify_slack() {
 }
 
 finish() {
+  # This function is registered as a trap on EXIT so it always runs, even
+  # when a command fails or the script is interrupted.  RUN_STATUS is set to
+  # "success" only after run_playbook returns cleanly, and to "locked" when
+  # another run already holds the flock.  Any other value (including the
+  # initial "starting") means something went wrong.
   local exit_code=$?
   local success_message=""
   local failure_message=""
@@ -351,6 +369,10 @@ build_playbook_args() {
 }
 
 # Build a local inventory that can match localhost/hostname/FQDN host_vars.
+# Three host entries are written so Ansible can resolve host_vars files keyed
+# by short hostname (e.g. ngoh10-ws.yml), FQDN (ngoh10-ws.hhmi.org.yml), or
+# the generic "localhost" fallback — whichever the operator created.
+# select_target_host() then picks the most specific match as the --limit target.
 write_runtime_inventory() {
   mkdir -p "$(dirname "${RUNTIME_INVENTORY}")"
 
@@ -382,6 +404,10 @@ select_target_host() {
 
 # Prevent overlapping runs from timer/manual invocations.
 acquire_lock_or_exit() {
+  # Open LOCK_FILE on file descriptor 9. flock -n 9 acquires an exclusive
+  # advisory lock on that fd without blocking; if another process already
+  # holds the lock (i.e. a prior run is still in progress) it returns
+  # non-zero immediately and we exit cleanly rather than queueing behind it.
   exec 9>"${LOCK_FILE}"
 
   if ! flock -n 9; then
@@ -394,6 +420,9 @@ acquire_lock_or_exit() {
 # Sync the local checkout to the latest state of the configured branch.
 sync_repository_checkout() {
   if [[ -d "${DEST}/.git" ]]; then
+    # Stale lock files are left behind when a previous git operation was
+    # interrupted (e.g. by a systemd timeout or SIGKILL).  Remove them before
+    # any git commands so we don't silently fail on the next run.
     rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
     if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
       git -C "${DEST}" remote set-url origin "${REPO_URL}"

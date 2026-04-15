@@ -55,6 +55,8 @@ if [[ ! -r "${SNAP_LIST_FILE}" ]]; then
   exit 0
 fi
 
+# mapfile -t reads lines from the process substitution into an array,
+# stripping the trailing newline from each element (-t flag).
 mapfile -t requested_snaps < <(
   grep -Ev '^[[:space:]]*(#|$)' "${SNAP_LIST_FILE}" || true
 )
@@ -64,6 +66,10 @@ if [[ ${#requested_snaps[@]} -eq 0 ]]; then
   exit 0
 fi
 
+# Only refresh snaps that are actually installed on this machine. The list
+# file is a fleet-wide baseline; a given workstation may have only a subset
+# of those browsers installed, and "snap refresh <name>" errors out if the
+# snap does not exist locally.
 installed_snaps=()
 for snap_name in "${requested_snaps[@]}"; do
   if snap list "${snap_name}" >/dev/null 2>&1; then

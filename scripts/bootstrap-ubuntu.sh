@@ -205,6 +205,9 @@ sync_repository_checkout() {
     git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
+    # --depth 1 fetches only the latest commit so the initial clone is fast
+    # and uses minimal disk space.  The role's ansible-pull runs later use a
+    # full fetch, so depth is not a permanent constraint.
     git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
   fi
 }
@@ -350,6 +353,8 @@ join_active_directory() {
     fi
 
     if printf '%s\n' "${ad_password}" | kinit "${ad_user}@HHMI.ORG"; then
+      # Unset the password immediately after kinit succeeds so it does not
+      # linger in memory or appear in any process listing.
       unset ad_password
       break
     fi
@@ -384,6 +389,13 @@ run_final_upgrade() {
 }
 
 # Main orchestration flow for first-time workstation bootstrap.
+# Bootstrap runs in two phases:
+#   Phase 1 (write_bootstrap_vars "false"): converge the baseline role without
+#           AD enrollment to install packages, timers, and the pull wrapper.
+#           This ensures krb5-user and realmd are present before kinit is called.
+#   Phase 2 (join_active_directory): obtain a Kerberos ticket, then re-converge
+#           with base_ad_enroll=true so the role performs the domain join and
+#           configures SSSD.
 main() {
   parse_args "$@"
   validate_prerequisites
@@ -401,6 +413,8 @@ main() {
   join_active_directory
   enable_pull_timer
   run_final_upgrade
+  # Persist the final bootstrap state with AD enabled so subsequent scheduled
+  # runs know this machine is domain-joined and can re-apply AD config if needed.
   write_bootstrap_vars "true" "${AD_JOIN_USER}" "true"
   print_ad_reboot_warning
 }

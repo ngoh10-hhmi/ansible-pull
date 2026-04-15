@@ -10,6 +10,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_bash(script: str) -> str:
+    # bash -lc runs as a login shell so that ~/.bashrc / /etc/profile.d are
+    # sourced, which is necessary when bash is invoked from a non-interactive
+    # context (e.g. pytest) and PATH or shell functions would otherwise differ
+    # from what a normal terminal session sees.
     result = subprocess.run(
         ["bash", "-lc", script],
         cwd=REPO_ROOT,

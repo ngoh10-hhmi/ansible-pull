@@ -39,6 +39,8 @@ def run_allow_failure(
 
 
 def yaml_scalar(value: object) -> str:
+    # YAML booleans are lowercase (true/false), but Python's str(True) returns
+    # "True" with a capital T which YAML would parse as a string, not a boolean.
     if isinstance(value, bool):
         return str(value).lower()
     return str(value)
@@ -55,6 +57,13 @@ def create_repo_variant(
     marker_contents: str,
     mutate: Callable[[Path], None] | None = None,
 ) -> Path:
+    """Clone the current repo into a local variant and optionally modify it.
+
+    The optional ``mutate`` callback receives the cloned repo path and can add
+    host_vars files, append tasks, or make any other change needed for the
+    specific test scenario.  Changes are committed so ansible-pull (which does
+    git reset --hard) will see them during a run_pull() call.
+    """
     repo_dir = workspace / name
     run("git", "clone", "--quiet", "--branch", TEST_BRANCH, str(REPO_ROOT), str(repo_dir))
     run("git", "config", "user.name", "Codex CI", cwd=repo_dir)
@@ -73,6 +82,13 @@ def configure_pull_environment(
     log_dir: Path,
     extra_vars: dict[str, object] | None = None,
 ) -> None:
+    """Write both /etc/ansible/pull.env and /etc/ansible/bootstrap-vars.yml.
+
+    Both files must be consistent: pull.env drives the wrapper script (repo,
+    branch, dest, log paths) and bootstrap-vars.yml is passed to
+    ansible-playbook as --extra-vars, pinning the same values so role defaults
+    cannot override them during the test run.
+    """
     Path("/etc/ansible/pull.env").write_text(
         "\n".join(
             [
@@ -127,6 +143,10 @@ def run_pull(
 
 
 def restore_default_pull_state(workspace: Path) -> None:
+    # Tests that disable timers or change config must call this in their
+    # finally block to leave the system in the expected steady state for the
+    # next test.  Re-pointing at REPO_ROOT ensures we don't leave the machine
+    # tracking a temporary test repo after the test workspace is deleted.
     run_pull(
         REPO_ROOT,
         workspace / "restore-checkout",
