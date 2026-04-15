@@ -126,6 +126,11 @@ sudo grep '^SLACK_' /etc/ansible/pull.env
 By default, only failed runs notify Slack. Set `SLACK_NOTIFY_SUCCESS=true` if
 you want success notifications too.
 
+Recent failure notifications can include the wrapper phase, the last detected
+Ansible task, a short error excerpt, and the local logfile path. If the Slack
+message is still too short, inspect the referenced logfile or journal output
+for the full failure context.
+
 ## Common local check issues
 
 - `shellcheck` missing:

@@ -28,6 +28,9 @@ The script can also prompt for usernames that should be added to the local
 Bootstrap requires joining the hhmi.org Active Directory domain. The script
 will prompt for an AD username and hidden password before the domain-join
 convergence run.
+
+When Slack webhook notifications are configured, failed runs can include the
+wrapper phase, last detected Ansible task, and a short error excerpt.
 EOF
 }
 
@@ -173,7 +176,8 @@ EOF
   fi
 }
 
-# Write the environment file consumed by the ansible-pull wrapper.
+# Write the environment file consumed by the ansible-pull wrapper, including
+# Slack settings for failure summaries and optional success notifications.
 write_pull_environment() {
   cat > /etc/ansible/pull.env <<EOF
 REPO_URL=${REPO_URL}

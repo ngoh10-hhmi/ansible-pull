@@ -3,7 +3,8 @@ set -euo pipefail
 
 # Update ansible-pull branch/repo settings on a workstation without full re-bootstrap.
 # This keeps /etc/ansible/pull.env and /etc/ansible/bootstrap-vars.yml aligned so
-# scheduled runs continue to track the intended branch.
+# scheduled runs continue to track the intended branch while preserving Slack
+# notification settings.
 
 ENV_FILE="/etc/ansible/pull.env"
 BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
@@ -86,6 +87,8 @@ apply_branch_settings() {
 }
 
 write_pull_env() {
+  # Keep existing Slack settings intact so future scheduled runs preserve the
+  # same failure summaries and optional success notifications.
   cat > "${ENV_FILE}" <<EOF
 REPO_URL=${REPO_URL}
 BRANCH=${BRANCH}

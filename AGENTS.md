@@ -123,7 +123,9 @@ Scheduled run flow:
 2. The service runs `/usr/local/sbin/run-ansible-pull`.
 3. The wrapper loads `/etc/ansible/pull.env`, acquires a `flock`, syncs the checkout, writes a runtime inventory, and runs `ansible-playbook`.
 4. If `SLACK_WEBHOOK_URL` is set, the wrapper can send Slack notifications on
-   failures. Success notifications are opt-in through
+   failures. Failure notifications can include the wrapper phase, last detected
+   Ansible task, a short error excerpt, and the local logfile path when that
+   context is available. Success notifications are opt-in through
    `SLACK_NOTIFY_SUCCESS=true`.
 
 Variable precedence:

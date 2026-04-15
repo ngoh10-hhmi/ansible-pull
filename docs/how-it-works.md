@@ -85,7 +85,9 @@ The default behavior is fail fast.
 
 If one Ansible task fails for the workstation, later tasks in the same play
 normally do not run for that machine. The wrapper then exits nonzero, logs the
-failure, and can send a Slack notification if that is configured.
+failure, and can send a Slack notification if that is configured. Recent
+failure notifications can include the wrapper phase, last detected task, a
+short error excerpt, and the local logfile path.
 
 That means a failure in an early area such as package installation usually
 prevents later areas such as timer management, AD configuration, or sudo-group

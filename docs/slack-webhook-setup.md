@@ -60,6 +60,18 @@ Webhook integrations are configured natively within the identical `/etc/ansible/
 - **Successes**: The wrapper skips success notifications by default (`SLACK_NOTIFY_SUCCESS=false`).
 - **Opt-in heartbeat**: To send success notifications too, set `SLACK_NOTIFY_SUCCESS=true` in `/etc/ansible/pull.env` or pass `--slack-notify-success true` during bootstrap.
 
+### What Failure Notifications Include
+When the wrapper can detect it from the current run output, failed-run Slack
+notifications now include:
+
+- the wrapper phase that failed (for example `sync_repository_checkout` or `run_playbook`)
+- the last detected Ansible task name
+- a short error excerpt from the run log
+- the local logfile path on disk
+
+This is meant to make the alert immediately more actionable without sending the
+entire run log to Slack.
+
 > [!NOTE]
 > **Activation Delay**: When you first add a Webhook URL to an existing machine, you may need to run `sudo /usr/local/sbin/run-ansible-pull` **twice**. 
 > 
