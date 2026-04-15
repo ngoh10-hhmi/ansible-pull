@@ -141,6 +141,65 @@ base_browser_update_snaps:
 - Use Option 2 when you need a quick manual bump for one package.
 - Use Option 3 when you want the targeted update captured and repeated through Git-managed automation.
 
+## Manual validation of browser updates
+
+If you want to prove that `browser-package-updates.service` actually upgrades an
+installed browser, the simplest path is usually Firefox when it is installed as
+a snap.
+
+### Firefox snap validation
+
+1. Check the current Firefox snap revision:
+
+```bash
+snap list firefox
+snap info firefox
+```
+
+2. Revert to the previous installed revision:
+
+```bash
+sudo snap revert firefox
+firefox --version
+```
+
+3. Trigger the browser update service manually:
+
+```bash
+sudo systemctl start browser-package-updates.service
+```
+
+4. Confirm Firefox moved back to the newer revision:
+
+```bash
+snap list firefox
+firefox --version
+journalctl -u browser-package-updates.service -n 100 --no-pager
+```
+
+This works only when the machine already has a previous Firefox snap revision
+available to revert to.
+
+### APT browser validation
+
+For an APT-managed browser such as Google Chrome, Edge, or Brave, you can test
+the same flow by downgrading to an older package version and then starting the
+browser update service.
+
+Pattern:
+
+```bash
+apt-cache policy google-chrome-stable
+sudo apt-get install --allow-downgrades google-chrome-stable=<older-version>
+google-chrome --version
+sudo systemctl start browser-package-updates.service
+google-chrome --version
+journalctl -u browser-package-updates.service -n 100 --no-pager
+```
+
+This path depends on the vendor repository still serving the older version, so
+it is often less convenient than the Firefox snap test.
+
 ## Good PoC rule
 
 For this proof of concept, prefer:
