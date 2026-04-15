@@ -183,7 +183,7 @@ def test_managed_package_updates_timer_is_installed() -> None:
     package_list = host.file("/etc/ansible/managed-package-updates.list")
 
     assert timer.exists
-    assert timer.contains("OnCalendar=*-*-* 03:00:00")
+    assert "OnCalendar=*-*-* 03:00:00" in timer.content_string
     assert service.exists
     assert service.contains(
         "ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list"
@@ -201,7 +201,7 @@ def test_browser_package_updates_timer_is_installed() -> None:
     snap_list = host.file("/etc/ansible/browser-snap-updates.list")
 
     assert timer.exists
-    assert timer.contains("OnCalendar=*-*-* 04:00:00")
+    assert "OnCalendar=*-*-* 04:00:00" in timer.content_string
     assert service.exists
     assert service.contains(
         "ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list"
