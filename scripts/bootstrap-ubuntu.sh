@@ -180,13 +180,13 @@ EOF
 # Slack settings for failure summaries and optional success notifications.
 write_pull_environment() {
   cat > /etc/ansible/pull.env <<EOF
-REPO_URL=${REPO_URL}
-BRANCH=${BRANCH}
-PLAYBOOK=${PLAYBOOK}
-DEST=${DEST}
-LOG_DIR=${LOG_DIR}
-SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-SLACK_NOTIFY_SUCCESS=${SLACK_NOTIFY_SUCCESS}
+REPO_URL="${REPO_URL}"
+BRANCH="${BRANCH}"
+PLAYBOOK="${PLAYBOOK}"
+DEST="${DEST}"
+LOG_DIR="${LOG_DIR}"
+SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL}"
+SLACK_NOTIFY_SUCCESS="${SLACK_NOTIFY_SUCCESS}"
 EOF
   chmod 0600 /etc/ansible/pull.env
 }

@@ -90,13 +90,13 @@ write_pull_env() {
   # Keep existing Slack settings intact so future scheduled runs preserve the
   # same failure summaries and optional success notifications.
   cat > "${ENV_FILE}" <<EOF
-REPO_URL=${REPO_URL}
-BRANCH=${BRANCH}
-PLAYBOOK=${PLAYBOOK}
-DEST=${DEST}
-LOG_DIR=${LOG_DIR}
-SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL:-}
-SLACK_NOTIFY_SUCCESS=${SLACK_NOTIFY_SUCCESS:-false}
+REPO_URL="${REPO_URL}"
+BRANCH="${BRANCH}"
+PLAYBOOK="${PLAYBOOK}"
+DEST="${DEST}"
+LOG_DIR="${LOG_DIR}"
+SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
+SLACK_NOTIFY_SUCCESS="${SLACK_NOTIFY_SUCCESS:-false}"
 EOF
   chmod 0600 "${ENV_FILE}"
 }
