@@ -25,6 +25,19 @@ def run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]
     )
 
 
+def run_allow_failure(
+    *args: str,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+
 def yaml_scalar(value: object) -> str:
     if isinstance(value, bool):
         return str(value).lower()
@@ -203,6 +216,52 @@ def test_apt_refresh_timer_can_be_disabled() -> None:
         assert refresh_enabled.rc != 0
         assert refresh_active.stdout.strip() == "inactive"
         assert refresh_active.rc != 0
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_requested_sudo_users_are_added_to_local_sudo_group() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-"))
+    username = f"apsudo{os.getpid()}"
+
+    try:
+        run_allow_failure("gpasswd", "-d", username, "sudo")
+        run_allow_failure("userdel", "--remove", username)
+        run("useradd", "--no-create-home", "--shell", "/usr/sbin/nologin", username)
+
+        configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
+        append_text(
+            Path("/etc/ansible/bootstrap-vars.yml"),
+            f"base_local_sudo_users:\n  - {username}\n",
+        )
+
+        run("/usr/local/sbin/run-ansible-pull")
+
+        sudo_group_members = host.check_output("getent group sudo").strip().split(":")[-1].split(",")
+        assert username in sudo_group_members
+    finally:
+        restore_default_pull_state(workspace)
+        run_allow_failure("gpasswd", "-d", username, "sudo")
+        run_allow_failure("userdel", "--remove", username)
+        shutil.rmtree(workspace)
+
+
+def test_missing_requested_sudo_user_fails_pull() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-missing-"))
+    username = f"missingsudo{os.getpid()}"
+
+    try:
+        assert run_allow_failure("getent", "passwd", username).returncode != 0
+
+        configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
+        append_text(
+            Path("/etc/ansible/bootstrap-vars.yml"),
+            f"base_local_sudo_users:\n  - {username}\n",
+        )
+
+        with pytest.raises(subprocess.CalledProcessError):
+            run("/usr/local/sbin/run-ansible-pull")
     finally:
         restore_default_pull_state(workspace)
         shutil.rmtree(workspace)

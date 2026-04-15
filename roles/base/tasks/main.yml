@@ -311,15 +311,35 @@
     state: present
   loop: "{{ base_workstation_extra_users }}"
 
-- name: Add local users to sudo group
-  ansible.builtin.user:
-    name: "{{ item }}"
-    groups: sudo
-    append: true
-  loop: "{{ base_local_sudo_users }}"
-
 # Keep the HHMI-specific identity flow in its own task file so the workstation
 # baseline stays readable and AD changes are easier to review in one place.
 - name: Configure Active Directory and System Join
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool
+
+- name: Require requested sudo users to resolve through NSS
+  ansible.builtin.command:
+    argv:
+      - getent
+      - passwd
+      - "{{ item }}"
+  register: base_sudo_user_lookup
+  changed_when: false
+  retries: 5
+  delay: 2
+  until: base_sudo_user_lookup.rc == 0
+  loop: "{{ base_local_sudo_users }}"
+
+- name: Add requested users to the local sudo group
+  ansible.builtin.command:
+    argv:
+      - gpasswd
+      - -a
+      - "{{ item }}"
+      - sudo
+  register: base_sudo_group_membership
+  changed_when: >-
+    'already a member' not in
+    ((base_sudo_group_membership.stdout | default(''))
+    + (base_sudo_group_membership.stderr | default('')))
+  loop: "{{ base_local_sudo_users }}"

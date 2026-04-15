@@ -66,6 +66,9 @@
     mode: "0600"
   notify: Restart SSSD
 
+- name: Restart SSSD before applying sudo access changes
+  ansible.builtin.meta: flush_handlers
+
 - name: Add sudoers definition for scicompsys and AD groups
   ansible.builtin.copy:
     dest: /etc/sudoers.d/10-scicompsys

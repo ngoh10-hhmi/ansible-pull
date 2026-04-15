@@ -6,6 +6,8 @@ base_workstation_extra_packages:
 
 # Example AD-backed sudo delegation for one machine or one operator group.
 # ad_sudo_group: workstation-admins
+# base_local_sudo_users:
+#   - duckd-a
 
 # Example local account creation. Use this only for local users, not directory
 # identities.

@@ -50,7 +50,7 @@ The rough flow is:
 1. install Ansible and a few required packages
 2. create `/etc/ansible` and local runtime directories
 3. clone this repo into `/var/lib/ansible-pull`
-4. prompt for hostname, machine type, and optional local sudo users
+4. prompt for hostname, machine type, and optional sudo users
 5. write `/etc/ansible/pull.env`
 6. write `/etc/ansible/bootstrap-vars.yml`
 7. install `/usr/local/sbin/run-ansible-pull`
@@ -91,8 +91,8 @@ That role is the baseline HHMI workstation configuration. It handles:
 - `ansible-pull` environment files and helper scripts
 - systemd units and timers
 - APT refresh and unattended-upgrades policy
-- optional local users and local sudo access
-- Active Directory enrollment and SSSD configuration
+- optional local users and sudo-group access
+- Active Directory enrollment, SSSD configuration, and optional AD group sudoers
 
 Although there is only one role today, the role is split internally:
 

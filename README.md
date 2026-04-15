@@ -103,7 +103,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script now performs the initial clone itself, so you only need this one file on a fresh machine.
-During bootstrap it will ask for machine type, an AD username plus hidden password for the required `hhmi.org` domain join, and optional local users that should be added to the `sudo` group as the final bootstrap step.
+During bootstrap it will ask for machine type, an AD username plus hidden password for the required `hhmi.org` domain join, and optional usernames that should be added to the local `sudo` group after the join completes.
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 
@@ -187,6 +187,8 @@ Example:
 base_workstation_extra_packages:
   - htop
 ad_sudo_group: workstation-admins
+base_local_sudo_users:
+  - duckd-a
 ```
 
 Use `base_workstation_extra_packages` to add packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.

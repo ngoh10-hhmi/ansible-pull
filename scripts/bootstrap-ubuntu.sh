@@ -22,8 +22,8 @@ Private repo later:
     --github-user machine-reader \
     --github-token-file /root/github-read-token.txt
 
-The script can also prompt for local users that should be added to the sudo
-group during bootstrap.
+The script can also prompt for usernames that should be added to the local
+`sudo` group after the AD enrollment converge.
 
 Bootstrap requires joining the hhmi.org Active Directory domain. The script
 will prompt for an AD username and hidden password before the domain-join
@@ -50,7 +50,7 @@ GITHUB_TOKEN_FILE=""
 SHORT_HOSTNAME=""
 MACHINE_TYPE=""
 AD_JOIN_USER=""
-LOCAL_SUDO_USERS=()
+SUDO_USERS=()
 SLACK_WEBHOOK_URL=""
 SLACK_NOTIFY_SUCCESS="false"
 
@@ -245,16 +245,16 @@ prompt_machine_identity() {
     fi
   done
 
-  prompt_local_sudo_users
+  prompt_sudo_users
 }
 
-# Prompt for optional local users that should be granted sudo access.
-prompt_local_sudo_users() {
+# Prompt for optional usernames that should be added to the local sudo group.
+prompt_sudo_users() {
   local sudo_users_input
   local sanitized_input
   local user_name
 
-  read -r -p "Local users to add to sudo (comma-separated, leave blank for none): " sudo_users_input
+  read -r -p "Users to add to the local sudo group after join (comma-separated, AD usernames are okay, leave blank for none): " sudo_users_input
 
   if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
     return
@@ -263,7 +263,7 @@ prompt_local_sudo_users() {
   sanitized_input="${sudo_users_input//,/ }"
 
   for user_name in ${sanitized_input}; do
-    LOCAL_SUDO_USERS+=("${user_name}")
+    SUDO_USERS+=("${user_name}")
   done
 }
 
@@ -277,9 +277,9 @@ write_bootstrap_vars() {
   local sudo_user
   local sudo_users_yaml=""
 
-  if [[ "${include_sudo_users}" == "true" && "${#LOCAL_SUDO_USERS[@]}" -gt 0 ]]; then
+  if [[ "${include_sudo_users}" == "true" && "${#SUDO_USERS[@]}" -gt 0 ]]; then
     sudo_users_yaml="base_local_sudo_users:"
-    for sudo_user in "${LOCAL_SUDO_USERS[@]}"; do
+    for sudo_user in "${SUDO_USERS[@]}"; do
       sudo_users_yaml+=$'\n'"  - ${sudo_user}"
     done
   fi
@@ -319,24 +319,6 @@ run_initial_configuration() {
   /usr/local/sbin/run-ansible-pull
 }
 
-# Add requested local users to sudo as the final bootstrap action.
-apply_local_sudo_users() {
-  local user_name
-
-  if [[ "${#LOCAL_SUDO_USERS[@]}" -eq 0 ]]; then
-    return
-  fi
-
-  for user_name in "${LOCAL_SUDO_USERS[@]}"; do
-    if ! id "${user_name}" >/dev/null 2>&1; then
-      echo "Warning: local user '${user_name}' does not exist; skipping sudo grant." >&2
-      continue
-    fi
-
-    usermod -aG sudo "${user_name}"
-  done
-}
-
 # Gather Kerberos creds and rerun convergence for the required AD enrollment.
 join_active_directory() {
   local ad_user
@@ -371,7 +353,7 @@ join_active_directory() {
     echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
   done
 
-  write_bootstrap_vars "true" "${ad_user}" "false"
+  write_bootstrap_vars "true" "${ad_user}" "true"
   /usr/local/sbin/run-ansible-pull
 }
 
@@ -416,7 +398,6 @@ main() {
   enable_pull_timer
   run_final_upgrade
   write_bootstrap_vars "true" "${AD_JOIN_USER}" "true"
-  apply_local_sudo_users
   print_ad_reboot_warning
 }
 

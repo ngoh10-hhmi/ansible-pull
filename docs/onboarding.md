@@ -63,7 +63,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
-The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate any existing local users that should be added to the `sudo` group at the end of bootstrap.
+The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate usernames that should be added to the local `sudo` group once the join completes. That list can include AD usernames if they resolve through SSSD after enrollment.
 
 ## 6. Verify
 

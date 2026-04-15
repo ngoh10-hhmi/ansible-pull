@@ -97,12 +97,16 @@ Notes:
 | Variable | What it controls | Usually set in | Used by |
 | --- | --- | --- | --- |
 | `base_workstation_extra_users` | Optional local user accounts to create | shared or host inventory | user creation task in `roles/base/tasks/main.yml` |
-| `base_local_sudo_users` | Existing local users to add to the `sudo` group | usually bootstrap-persisted values | sudo-group task in `roles/base/tasks/main.yml` |
+| `base_local_sudo_users` | Usernames to add to the local `sudo` group | usually bootstrap-persisted values, sometimes host inventory | NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
 
 Notes:
 
-- `base_local_sudo_users` is for local accounts only.
-- AD-backed sudo access is handled separately in the AD join task file.
+- Despite the legacy name, this list may include local users or AD-backed
+  usernames.
+- AD-backed usernames are added to the local `sudo` group after the AD join and
+  SSSD configuration steps run.
+- Entries in `base_local_sudo_users` must resolve through NSS before the role
+  will update the local `sudo` group.
 
 ## AD And Identity Variables
 
@@ -169,6 +173,7 @@ care about most:
 - `base_apt_maintenance_enabled`
 - `base_workstation_enable_unattended_upgrades`
 - `base_workstation_unattended_upgrade_days`
+- `base_local_sudo_users`
 - `ad_sudo_group`
 
 If you are troubleshooting bootstrap or branch behavior, also look at:
