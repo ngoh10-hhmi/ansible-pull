@@ -46,7 +46,7 @@ Suggested validation:
 - Add script-level tests that prove `REPO_URL`, `PLAYBOOK`, `DEST`, `LOG_DIR`,
   and Slack-related values survive a write/load round-trip.
 
-### 2. `base_local_sudo_users` behavior does not match the docs
+### 2. Sudo-user naming and behavior drifted from intent
 
 Update:
 
@@ -58,7 +58,7 @@ Update:
 Current behavior:
 
 - Bootstrap persists the requested usernames into
-  `base_local_sudo_users` before the AD enrollment converge.
+  `base_sudo_users` before the AD enrollment converge.
 - The role now waits until after the AD join and SSSD configuration before
   resolving those usernames through NSS.
 - The role updates the local `sudo` group with `gpasswd` instead of using the
@@ -73,10 +73,10 @@ Why this was a gap:
 Recommended change:
 
 - Keep the historical `/etc/group` model for now.
-- Treat `base_local_sudo_users` as "usernames that must resolve through NSS"
+- Treat `base_sudo_users` as "usernames that must resolve through NSS"
   before the local `sudo` group is updated.
-- Keep the docs explicit that the name is legacy and may include AD-backed
-  usernames after SSSD is active.
+- Keep `base_local_sudo_users` as a backward-compatible alias, but make
+  `base_sudo_users` the canonical name in docs and new bootstrap state.
 
 Suggested validation:
 
@@ -196,7 +196,7 @@ Suggested validation:
 ## Recommended Change Order
 
 1. Harden env-file serialization and add branch validation.
-2. Align `base_local_sudo_users` behavior with the documented contract.
+2. Align sudo-user naming and behavior with the documented contract.
 3. Harden Slack delivery and add coverage for notification settings.
 4. Add a lightweight script-test layer.
 5. Improve APT maintenance lock tolerance.

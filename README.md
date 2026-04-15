@@ -187,7 +187,7 @@ Example:
 base_workstation_extra_packages:
   - htop
 ad_sudo_group: workstation-admins
-base_local_sudo_users:
+base_sudo_users:
   - duckd-a
 ```
 

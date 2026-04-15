@@ -317,6 +317,16 @@
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool
 
+- name: Build effective sudo user list
+  ansible.builtin.set_fact:
+    base_effective_sudo_users: >-
+      {{
+        (
+          (base_sudo_users | default([]))
+          + (base_local_sudo_users | default([]))
+        ) | unique
+      }}
+
 - name: Require requested sudo users to resolve through NSS
   ansible.builtin.command:
     argv:
@@ -328,7 +338,8 @@
   retries: 5
   delay: 2
   until: base_sudo_user_lookup.rc == 0
-  loop: "{{ base_local_sudo_users }}"
+  loop: "{{ base_effective_sudo_users }}"
+  when: (base_effective_sudo_users | length) > 0
 
 - name: Add requested users to the local sudo group
   ansible.builtin.command:
@@ -342,4 +353,5 @@
     'already a member' not in
     ((base_sudo_group_membership.stdout | default(''))
     + (base_sudo_group_membership.stderr | default('')))
-  loop: "{{ base_local_sudo_users }}"
+  loop: "{{ base_effective_sudo_users }}"
+  when: (base_effective_sudo_users | length) > 0

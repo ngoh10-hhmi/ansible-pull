@@ -159,7 +159,8 @@ Recommended Git workflow:
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, and unattended security upgrades remain on a 30-day cadence. Non-security upgrades are manual unless `base_apt_maintenance_enabled` is turned on.
 - The repo does not manage snap refresh policy. Firefox may be outside the APT-managed path.
 - The AD join path currently assumes HHMI-specific DNS, realm, and SSSD behavior. Changes there are high risk and should be treated as operational changes, not cosmetic refactors.
-- `base_local_sudo_users` is the bootstrap-persisted list of usernames to add to the local `sudo` group. Despite the legacy name, it may include AD-backed usernames that resolve through SSSD after enrollment.
+- `base_sudo_users` is the bootstrap-persisted list of usernames to add to the local `sudo` group. It may include AD-backed usernames that resolve through SSSD after enrollment.
+- `base_local_sudo_users` remains a backward-compatible alias for older bootstrapped hosts and inventory, but new changes should use `base_sudo_users`.
 - AD-backed sudo access is still also modeled through sudoers entries and groups in `roles/base/tasks/ad_join.yml` when `ad_sudo_group` is used.
 - Slack webhook secrets must stay out of Git. `SLACK_WEBHOOK_URL` belongs in
   `/etc/ansible/pull.env`, not in inventory or committed files.

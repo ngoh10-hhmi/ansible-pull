@@ -278,7 +278,7 @@ write_bootstrap_vars() {
   local sudo_users_yaml=""
 
   if [[ "${include_sudo_users}" == "true" && "${#SUDO_USERS[@]}" -gt 0 ]]; then
-    sudo_users_yaml="base_local_sudo_users:"
+    sudo_users_yaml="base_sudo_users:"
     for sudo_user in "${SUDO_USERS[@]}"; do
       sudo_users_yaml+=$'\n'"  - ${sudo_user}"
     done
