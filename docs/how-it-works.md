@@ -121,7 +121,7 @@ That role is the baseline HHMI workstation configuration. It handles:
 - package repositories and package installation
 - `ansible-pull` environment files and helper scripts
 - systemd units and timers
-- APT refresh and unattended-upgrades policy
+- APT refresh, targeted package-update timers, and unattended-upgrades policy
 - optional local users and sudo-group access
 - Active Directory enrollment, SSSD configuration, and optional AD group sudoers
 
@@ -168,7 +168,7 @@ This is where the active shared workstation baseline lives.
 Example:
 
 - the default package list for every machine
-- shared APT and unattended-upgrades policy
+- shared APT, targeted package-update, and unattended-upgrades policy
 
 ### 3. Host-specific inventory
 

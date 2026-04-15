@@ -4,10 +4,32 @@ This repository is intentionally conservative by default:
 
 - unattended upgrades are security-only
 - A dedicated systemd timer refreshes APT package lists hourly
+- installed packages from `base_workstation_base_packages` are upgraded daily
+- installed packages from `base_browser_update_packages` are upgraded daily
+- installed browser snaps from `base_browser_update_snaps` are refreshed daily
 - unattended upgrades run every 30 days
-- non-security updates are not applied automatically
+- host-specific one-off packages are not broadly auto-updated
 
 When a specific package needs attention, such as a browser or another vulnerable app, use one of the patterns below.
+
+## Default behavior
+
+By default, the repo now has three update paths:
+
+- `apt-refresh.timer` refreshes package metadata hourly
+- `managed-package-updates.timer` upgrades only installed packages from `base_workstation_base_packages`
+- `browser-package-updates.timer` upgrades only installed packages from `base_browser_update_packages` and refreshes only installed snaps from `base_browser_update_snaps`
+
+This means:
+
+- the shared baseline gets daily non-security updates
+- installed browsers in the browser list get daily non-security updates
+- installed browser snaps in the snap list get daily refreshes
+- packages added only through `base_workstation_extra_packages` stay outside the daily managed update path unless you intentionally promote them
+- absent browser packages are never installed just because they appear in the browser list
+- absent browser snaps are never installed just because they appear in the browser snap list
+
+Firefox installed as a snap is now covered by the browser timer when the `firefox` snap is already present.
 
 ## Option 1. Keep the package installed on one host
 
@@ -32,7 +54,7 @@ On that host:
 sudo /usr/local/sbin/run-ansible-pull
 ```
 
-This ensures the package is installed and remains present. It does not enable broad non-security auto-updates for the whole fleet.
+This ensures the package is installed and remains present. It does not add that package to the shared daily managed update list unless you also move it into `base_workstation_base_packages` or `base_browser_update_packages`.
 
 ## Option 2. Perform a one-time targeted upgrade
 
@@ -50,7 +72,7 @@ sudo apt-get install --only-upgrade openssh-server
 sudo apt-get install --only-upgrade google-chrome-stable
 ```
 
-This is the simplest operational response for a one-off vulnerability that is not covered by unattended security updates.
+This is the simplest operational response for a one-off vulnerability that is not already covered by the daily managed baseline/browser timers or unattended security updates.
 
 ## Option 3. Add a temporary Ansible task for a controlled rollout
 
@@ -66,7 +88,7 @@ Pattern:
     update_cache: true
 ```
 
-Use this carefully. `state: latest` is useful for emergency response, but it is broader than the normal conservative baseline.
+Use this carefully. `state: latest` is useful for emergency response, but it is broader than the normal shared daily baseline update path.
 
 ## Option 4. Manage third-party repositories and PPAs
 
@@ -91,16 +113,31 @@ base_workstation_apt_repos:
     repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc] http://dl.google.com/linux/chrome/deb/ stable main"
 ```
 
-Then add the package to the package list:
+Then add the package to the right package list:
 
 ```yaml
 base_workstation_extra_packages:
   - google-chrome-stable
 ```
 
+Or, if the browser should stay in the shared browser exception path, keep it in:
+
+```yaml
+base_browser_update_packages:
+  - google-chrome-stable
+```
+
+For snap-managed browsers such as Firefox on modern Ubuntu, use:
+
+```yaml
+base_browser_update_snaps:
+  - firefox
+```
+
 ## Choosing the right option
 
-- Use Option 1 when a package should be installed on a specific host long-term.
+- Use the default behavior when the package is part of the shared baseline or browser exception list.
+- Use Option 1 when a package should be installed on one specific host but should not become part of the shared daily update policy.
 - Use Option 2 when you need a quick manual bump for one package.
 - Use Option 3 when you want the targeted update captured and repeated through Git-managed automation.
 
@@ -109,5 +146,5 @@ base_workstation_extra_packages:
 For this proof of concept, prefer:
 
 1. security-only unattended upgrades for the baseline
-2. manual targeted upgrades for exceptions
-3. Ansible-based targeted package upgrades only when you want a repeatable tracked change
+2. daily targeted upgrades for shared baseline packages and installed browsers
+3. manual or temporary targeted upgrades for everything else

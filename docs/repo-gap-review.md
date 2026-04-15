@@ -169,29 +169,30 @@ Suggested validation:
 - Add one test for a valid branch switch and one for an invalid branch that
   must leave both persisted files untouched.
 
-### 6. APT maintenance is less lock-tolerant than APT refresh
+### 6. Targeted package update helpers should stay lock-tolerant
 
 Current behavior:
 
 - [`scripts/apt-refresh.sh`](../scripts/apt-refresh.sh) uses
   `DPkg::Lock::Timeout=600`.
-- [`scripts/apt-maintenance.sh`](../scripts/apt-maintenance.sh) does not.
+- [`scripts/upgrade-installed-apt-packages.sh`](../scripts/upgrade-installed-apt-packages.sh)
+  also uses `DPkg::Lock::Timeout=600`.
 
-Why this is a gap:
+Why this still matters:
 
-- The maintenance timer can collide with unattended upgrades or other APT work.
-- The refresh helper already encodes the more resilient behavior.
+- The daily managed-package and browser-package timers can still collide with
+  unattended upgrades or other APT work if this tolerance regresses later.
+- The refresh helper and targeted-update helper should stay aligned.
 
 Recommended change:
 
-- Apply the same lock-timeout strategy to the maintenance helper's update,
-  dist-upgrade, autoremove, and autoclean path where appropriate.
-- Consider documenting the expected interaction with unattended-upgrades.
+- Keep the same lock-timeout strategy on both helper paths as the scripts evolve.
+- Keep documenting the expected interaction with unattended-upgrades.
 
 Suggested validation:
 
-- Add at least one script-level test that confirms the helper invokes APT with
-  the intended lock-tolerant flags.
+- Add at least one script-level or integration test that confirms the helper
+  keeps invoking APT with the intended lock-tolerant flags.
 
 ## Recommended Change Order
 

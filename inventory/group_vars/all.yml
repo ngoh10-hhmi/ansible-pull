@@ -46,11 +46,35 @@ base_workstation_ppas: []
 #   repo: >-
 #     deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.asc]
 #     http://dl.google.com/linux/chrome/deb/ stable main
+# - name: microsoft-edge
+#   key_url: "https://packages.microsoft.com/keys/microsoft.asc"
+#   key_filename: "microsoft-edge.asc"
+#   repo: >-
+#     deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft-edge.asc]
+#     https://packages.microsoft.com/repos/edge stable main
+# - name: brave-browser
+#   key_url: "https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg"
+#   key_filename: "brave-browser.gpg"
+#   repo: >-
+#     deb [signed-by=/etc/apt/keyrings/brave-browser.gpg]
+#     https://brave-browser-apt-release.s3.brave.com/ stable main
 base_workstation_apt_repos: []
 
 # Keep the hourly metadata refresh enabled through apt-refresh.timer.
 base_apt_refresh_enabled: true
-base_apt_maintenance_enabled: false
+base_managed_package_updates_enabled: true
+base_managed_package_updates_timer_on_calendar: "*-*-* 03:00:00"
+
+base_browser_package_updates_enabled: true
+base_browser_package_updates_timer_on_calendar: "*-*-* 04:00:00"
+base_browser_update_packages:
+  - google-chrome-stable
+  - microsoft-edge-stable
+  - brave-browser
+  - firefox
+base_browser_update_snaps:
+  - firefox
+
 base_workstation_enable_unattended_upgrades: true
 # The day-based APT periodic refresh stays off because systemd handles it
 # hourly.

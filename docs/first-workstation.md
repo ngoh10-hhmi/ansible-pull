@@ -22,8 +22,10 @@ Recommended shared baseline:
 
 - keep unattended upgrades enabled
 - keep hourly APT package list refresh enabled
-- keep `base_apt_maintenance_enabled: false`
+- keep `base_managed_package_updates_enabled: true`
+- keep `base_browser_package_updates_enabled: true`
 - keep the shared package list small and intentional
+- remember only `base_workstation_base_packages` gets daily targeted upgrades by default
 - keep unattended upgrades security-only
 - keep `base_workstation_update_package_lists_days: 0`
 - keep `base_workstation_unattended_upgrade_days: 30`
@@ -87,6 +89,8 @@ Check the timer:
 ```bash
 systemctl status ansible-pull.timer
 systemctl list-timers ansible-pull.timer
+systemctl status managed-package-updates.timer
+systemctl status browser-package-updates.timer
 ```
 
 Check the most recent log:
@@ -117,5 +121,6 @@ sudo /usr/local/sbin/run-ansible-pull
 
 - If you do not create a host file, the machine will use only the shared baseline.
 - If the host file name does not match `hostname -s`, host-specific vars will not load.
-- If the machine uses Firefox as a snap, browser updates are not controlled by the current APT tasks.
+- If the machine uses Firefox as a snap, the browser timer now refreshes it only when the Firefox snap is already installed.
+- Host-specific `base_workstation_extra_packages` entries are not part of the daily managed package update list unless you intentionally promote them into `base_workstation_base_packages` or the browser package list.
 - If you do not want inbound SSH on every workstation, move `openssh-server` out of `inventory/group_vars/all.yml` and add it back only on the hosts that need it.

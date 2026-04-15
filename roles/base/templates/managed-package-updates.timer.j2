@@ -1,0 +1,9 @@
+[Unit]
+Description=Schedule daily managed baseline package upgrades
+
+[Timer]
+OnCalendar={{ base_managed_package_updates_timer_on_calendar }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

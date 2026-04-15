@@ -1,9 +1,0 @@
-[Unit]
-Description=Schedule workstation apt maintenance
-
-[Timer]
-OnCalendar={{ base_apt_maintenance_timer_on_calendar }}
-Persistent=true
-
-[Install]
-WantedBy=timers.target

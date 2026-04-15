@@ -41,6 +41,8 @@ As a rule:
 | --- | --- | --- | --- |
 | `base_workstation_base_packages` | Shared package list for every workstation | `inventory/group_vars/all.yml` | package install task in `roles/base/tasks/main.yml` |
 | `base_workstation_extra_packages` | Extra packages for one host or small subset of hosts | usually `inventory/host_vars/<hostname>.yml` | package install task in `roles/base/tasks/main.yml` |
+| `base_browser_update_packages` | Browser packages to upgrade daily when already installed | `inventory/group_vars/all.yml` unless fleet policy changes | browser package update list in `roles/base/tasks/main.yml` |
+| `base_browser_update_snaps` | Browser snaps to refresh daily when already installed | `inventory/group_vars/all.yml` unless fleet policy changes | browser snap update list in `roles/base/tasks/main.yml` |
 | `base_workstation_ppas` | Ubuntu PPA list to add before package install | shared or host inventory | PPA task in `roles/base/tasks/main.yml` |
 | `base_workstation_apt_repos` | Third-party APT repos and signing keys | shared or host inventory | key download and repo tasks in `roles/base/tasks/main.yml` |
 
@@ -49,6 +51,14 @@ Notes:
 - `base_workstation_base_packages` is the main fleet baseline.
 - `base_workstation_extra_packages` is the preferred way to add one-off host
   packages without replacing the shared baseline.
+- `base_workstation_base_packages` also drives the daily managed package update
+  list.
+- `base_browser_update_packages` does not install browsers. It only defines
+  which already-installed browser APT packages the daily browser timer should
+  try to upgrade.
+- `base_browser_update_snaps` does not install snaps. It only defines which
+  already-installed browser snaps the daily browser timer should try to
+  refresh.
 - `base_workstation_apt_repos` entries are expected to include fields like
   `key_url`, `key_filename`, and `repo`.
 
@@ -79,8 +89,10 @@ Notes:
 | `base_apt_refresh_enabled` | Whether the hourly `apt-refresh.timer` is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
 | `base_apt_refresh_timer_on_calendar` | Schedule for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
 | `base_apt_refresh_randomized_delay_sec` | Delay spread for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
-| `base_apt_maintenance_enabled` | Whether the optional maintenance timer is enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
-| `base_apt_maintenance_timer_on_calendar` | Schedule for optional maintenance runs | role defaults unless policy changes | `roles/base/templates/apt-maintenance.timer.j2` |
+| `base_managed_package_updates_enabled` | Whether the daily managed-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
+| `base_managed_package_updates_timer_on_calendar` | Schedule for managed baseline package upgrades | role defaults unless policy changes | `roles/base/templates/managed-package-updates.timer.j2` |
+| `base_browser_package_updates_enabled` | Whether the daily browser-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
+| `base_browser_package_updates_timer_on_calendar` | Schedule for browser package upgrades | role defaults unless policy changes | `roles/base/templates/browser-package-updates.timer.j2` |
 | `base_workstation_enable_unattended_upgrades` | Whether unattended upgrades are enabled | `inventory/group_vars/all.yml` | APT config tasks in `roles/base/tasks/main.yml` |
 | `base_workstation_update_package_lists_days` | Day-based APT periodic refresh value | `inventory/group_vars/all.yml` | `/etc/apt/apt.conf.d/20auto-upgrades` |
 | `base_workstation_unattended_upgrade_days` | Day-based unattended-upgrades cadence | `inventory/group_vars/all.yml` | `/etc/apt/apt.conf.d/20auto-upgrades` |
@@ -89,6 +101,10 @@ Notes:
 Notes:
 
 - This repo separates hourly package-list refresh from unattended upgrades.
+- Managed baseline packages and already-installed browser packages are upgraded
+  through their own daily timers instead of a broad `dist-upgrade`.
+- The browser timer can refresh a small named set of installed browser snaps
+  without taking over general snap refresh policy.
 - `base_workstation_update_package_lists_days` is set to `0` in the shared
   baseline because the dedicated `apt-refresh.timer` handles that path instead.
 
@@ -172,7 +188,10 @@ care about most:
 - `base_workstation_ppas`
 - `base_workstation_apt_repos`
 - `base_apt_refresh_enabled`
-- `base_apt_maintenance_enabled`
+- `base_managed_package_updates_enabled`
+- `base_browser_package_updates_enabled`
+- `base_browser_update_packages`
+- `base_browser_update_snaps`
 - `base_workstation_enable_unattended_upgrades`
 - `base_workstation_unattended_upgrade_days`
 - `base_sudo_users`

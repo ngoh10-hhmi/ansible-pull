@@ -88,10 +88,11 @@ The pull wrapper now writes to both journald and the per-host logfile, so either
 ## What this setup updates
 
 - Ubuntu security updates
-- APT-managed packages like `openssh-server`
-- Optional non-security package upgrades if you enable `base_apt_maintenance_enabled`
+- Daily targeted upgrades for installed packages from `base_workstation_base_packages`
+- Daily targeted upgrades for installed browser packages from `base_browser_update_packages`
+- Daily targeted refreshes for installed browser snaps from `base_browser_update_snaps`
 
-By default, `ansible-pull` checks in every 15 minutes. A dedicated hourly systemd timer refreshes APT package lists, and unattended upgrades remain security-only on a 30-day cadence. This does not automatically manage snap refresh policy.
+By default, `ansible-pull` checks in every 15 minutes. A dedicated hourly systemd timer refreshes APT package lists, managed baseline packages upgrade daily, configured browser packages upgrade daily only when already installed, configured browser snaps refresh daily only when already installed, and unattended upgrades remain security-only on a 30-day cadence. This does not automatically manage general snap refresh policy.
 
 ## Private repo later
 
@@ -115,4 +116,4 @@ Using a token file is safer than passing the token directly on the command line.
 - Run `pre-commit` before pushing changes so local checks match CI
 
 See [docs/first-workstation.md](first-workstation.md) for the exact first-machine rollout.
-See [docs/targeted-package-updates.md](targeted-package-updates.md) for how to intentionally upgrade a specific package without changing the default security-only posture.
+See [docs/targeted-package-updates.md](targeted-package-updates.md) for how to handle packages that sit outside the shared baseline and browser exception lists.

@@ -156,18 +156,53 @@
     mode: "0755"
   when: base_apt_refresh_enabled
 
-- name: Install apt maintenance helper
+- name: Install installed-package upgrade helper
   ansible.builtin.copy:
     content: >-
       {{ lookup(
         'ansible.builtin.file',
-        playbook_dir + '/../scripts/apt-maintenance.sh'
+        playbook_dir + '/../scripts/upgrade-installed-apt-packages.sh'
       ) }}
-    dest: /usr/local/sbin/apt-maintenance
+    dest: /usr/local/sbin/upgrade-installed-apt-packages
     owner: root
     group: root
     mode: "0755"
-  when: base_apt_maintenance_enabled
+
+- name: Install browser update helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/update-installed-browsers.sh'
+      ) }}
+    dest: /usr/local/sbin/update-installed-browsers
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install managed baseline package update list
+  ansible.builtin.copy:
+    dest: /etc/ansible/managed-package-updates.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ (base_workstation_base_packages | unique | join('\n')) ~ '\n' }}"
+
+- name: Install browser package update list
+  ansible.builtin.copy:
+    dest: /etc/ansible/browser-package-updates.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ (base_browser_update_packages | unique | join('\n')) ~ '\n' }}"
+
+- name: Install browser snap update list
+  ansible.builtin.copy:
+    dest: /etc/ansible/browser-snap-updates.list
+    owner: root
+    group: root
+    mode: "0644"
+    content: "{{ (base_browser_update_snaps | unique | join('\n')) ~ '\n' }}"
 
 - name: Install ansible-pull service unit
   ansible.builtin.template:
@@ -187,15 +222,14 @@
     mode: "0644"
   notify: Reload systemd
 
-- name: Install apt maintenance service unit
+- name: Install managed package update service unit
   ansible.builtin.template:
-    src: apt-maintenance.service.j2
-    dest: /etc/systemd/system/apt-maintenance.service
+    src: managed-package-updates.service.j2
+    dest: /etc/systemd/system/managed-package-updates.service
     owner: root
     group: root
     mode: "0644"
   notify: Reload systemd
-  when: base_apt_maintenance_enabled
 
 - name: Install apt refresh service unit
   ansible.builtin.template:
@@ -217,15 +251,32 @@
   notify: Reload systemd
   when: base_apt_refresh_enabled
 
-- name: Install apt maintenance timer unit
+- name: Install managed package update timer unit
   ansible.builtin.template:
-    src: apt-maintenance.timer.j2
-    dest: /etc/systemd/system/apt-maintenance.timer
+    src: managed-package-updates.timer.j2
+    dest: /etc/systemd/system/managed-package-updates.timer
     owner: root
     group: root
     mode: "0644"
   notify: Reload systemd
-  when: base_apt_maintenance_enabled
+
+- name: Install browser package update service unit
+  ansible.builtin.template:
+    src: browser-package-updates.service.j2
+    dest: /etc/systemd/system/browser-package-updates.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install browser package update timer unit
+  ansible.builtin.template:
+    src: browser-package-updates.timer.j2
+    dest: /etc/systemd/system/browser-package-updates.timer
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
 
 - name: Reload systemd before managing timers
   ansible.builtin.meta: flush_handlers
@@ -254,20 +305,52 @@
   failed_when: false
   when: not base_apt_refresh_enabled
 
-- name: Enable apt maintenance timer
+- name: Enable managed package update timer
   ansible.builtin.systemd_service:
-    name: apt-maintenance.timer
+    name: managed-package-updates.timer
     enabled: true
     state: started
-  when: base_apt_maintenance_enabled
+  when: base_managed_package_updates_enabled
 
-- name: Disable apt maintenance timer when not wanted
+- name: Disable managed package update timer when not wanted
+  ansible.builtin.systemd_service:
+    name: managed-package-updates.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not base_managed_package_updates_enabled
+
+- name: Enable browser package update timer
+  ansible.builtin.systemd_service:
+    name: browser-package-updates.timer
+    enabled: true
+    state: started
+  when: base_browser_package_updates_enabled
+
+- name: Disable browser package update timer when not wanted
+  ansible.builtin.systemd_service:
+    name: browser-package-updates.timer
+    enabled: false
+    state: stopped
+  failed_when: false
+  when: not base_browser_package_updates_enabled
+
+- name: Disable legacy apt maintenance timer
   ansible.builtin.systemd_service:
     name: apt-maintenance.timer
     enabled: false
     state: stopped
   failed_when: false
-  when: not base_apt_maintenance_enabled
+
+- name: Remove legacy apt maintenance files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /usr/local/sbin/apt-maintenance
+    - /etc/systemd/system/apt-maintenance.service
+    - /etc/systemd/system/apt-maintenance.timer
+  notify: Reload systemd
 
 - name: Configure APT periodic settings
   # Package-list refresh stays disabled here because apt-refresh.timer runs

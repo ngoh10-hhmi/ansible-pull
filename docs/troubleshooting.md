@@ -59,11 +59,12 @@ systemctl list-timers ansible-pull.timer
 systemctl cat ansible-pull.timer
 ```
 
-For the optional maintenance and refresh timers:
+For the refresh and targeted-update timers:
 
 ```bash
 systemctl status apt-refresh.timer
-systemctl status apt-maintenance.timer
+systemctl status managed-package-updates.timer
+systemctl status browser-package-updates.timer
 ```
 
 ## Check which host_vars file should apply

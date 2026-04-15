@@ -133,7 +133,8 @@ def restore_default_pull_state(workspace: Path) -> None:
         workspace / "restore-logs",
         extra_vars={
             "base_apt_refresh_enabled": True,
-            "base_apt_maintenance_enabled": False,
+            "base_managed_package_updates_enabled": True,
+            "base_browser_package_updates_enabled": True,
         },
     )
 
@@ -176,27 +177,53 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.contains('Unattended-Upgrade::Automatic-Reboot "false";')
 
 
-def test_apt_maintenance_timer_can_be_enabled() -> None:
-    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-maint-"))
-    try:
-        run_pull(
-            REPO_ROOT,
-            workspace / "checkout",
-            workspace / "logs",
-            extra_vars={"base_apt_maintenance_enabled": True},
-        )
+def test_managed_package_updates_timer_is_installed() -> None:
+    timer = host.file("/etc/systemd/system/managed-package-updates.timer")
+    service = host.file("/etc/systemd/system/managed-package-updates.service")
+    package_list = host.file("/etc/ansible/managed-package-updates.list")
 
-        timer = host.file("/etc/systemd/system/apt-maintenance.timer")
-        service = host.file("/etc/systemd/system/apt-maintenance.service")
+    assert timer.exists
+    assert timer.contains("OnCalendar=*-*-* 03:00:00")
+    assert service.exists
+    assert service.contains(
+        "ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list"
+    )
+    assert package_list.exists
+    assert package_list.contains("^ca-certificates$")
+    assert package_list.contains("^vim$")
+    assert host.run("systemctl is-enabled managed-package-updates.timer").stdout.strip() == "enabled"
 
-        assert timer.exists
-        assert "OnCalendar=Sat *-*-* 03:00:00" in timer.content_string
-        assert service.exists
-        assert service.contains("ExecStart=/usr/local/sbin/apt-maintenance")
-        assert host.run("systemctl is-enabled apt-maintenance.timer").stdout.strip() == "enabled"
-    finally:
-        restore_default_pull_state(workspace)
-        shutil.rmtree(workspace)
+
+def test_browser_package_updates_timer_is_installed() -> None:
+    timer = host.file("/etc/systemd/system/browser-package-updates.timer")
+    service = host.file("/etc/systemd/system/browser-package-updates.service")
+    package_list = host.file("/etc/ansible/browser-package-updates.list")
+    snap_list = host.file("/etc/ansible/browser-snap-updates.list")
+
+    assert timer.exists
+    assert timer.contains("OnCalendar=*-*-* 04:00:00")
+    assert service.exists
+    assert service.contains(
+        "ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list"
+    )
+    assert package_list.exists
+    assert package_list.contains("^google-chrome-stable$")
+    assert package_list.contains("^firefox$")
+    assert snap_list.exists
+    assert snap_list.contains("^firefox$")
+    assert host.run("systemctl is-enabled browser-package-updates.timer").stdout.strip() == "enabled"
+
+
+def test_legacy_apt_maintenance_timer_is_removed() -> None:
+    timer = host.file("/etc/systemd/system/apt-maintenance.timer")
+    service = host.file("/etc/systemd/system/apt-maintenance.service")
+    helper = host.file("/usr/local/sbin/apt-maintenance")
+    timer_enabled = host.run("systemctl is-enabled apt-maintenance.timer")
+
+    assert not timer.exists
+    assert not service.exists
+    assert not helper.exists
+    assert timer_enabled.rc != 0
 
 
 def test_apt_refresh_timer_can_be_disabled() -> None:
@@ -216,6 +243,50 @@ def test_apt_refresh_timer_can_be_disabled() -> None:
         assert refresh_enabled.rc != 0
         assert refresh_active.stdout.strip() == "inactive"
         assert refresh_active.rc != 0
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_managed_package_updates_timer_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-managed-updates-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_managed_package_updates_enabled": False},
+        )
+
+        managed_enabled = host.run("systemctl is-enabled managed-package-updates.timer")
+        managed_active = host.run("systemctl is-active managed-package-updates.timer")
+
+        assert managed_enabled.stdout.strip() == "disabled"
+        assert managed_enabled.rc != 0
+        assert managed_active.stdout.strip() == "inactive"
+        assert managed_active.rc != 0
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_browser_package_updates_timer_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-browser-updates-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_browser_package_updates_enabled": False},
+        )
+
+        browser_enabled = host.run("systemctl is-enabled browser-package-updates.timer")
+        browser_active = host.run("systemctl is-active browser-package-updates.timer")
+
+        assert browser_enabled.stdout.strip() == "disabled"
+        assert browser_enabled.rc != 0
+        assert browser_active.stdout.strip() == "inactive"
+        assert browser_active.rc != 0
     finally:
         restore_default_pull_state(workspace)
         shutil.rmtree(workspace)

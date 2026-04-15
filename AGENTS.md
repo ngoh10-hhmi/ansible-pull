@@ -156,8 +156,8 @@ Recommended Git workflow:
   retention advice.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
-- `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, and unattended security upgrades remain on a 30-day cadence. Non-security upgrades are manual unless `base_apt_maintenance_enabled` is turned on.
-- The repo does not manage snap refresh policy. Firefox may be outside the APT-managed path.
+- `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.
+- The repo does not manage general snap refresh policy. The browser timer only targets named installed browser snaps such as Firefox.
 - The AD join path currently assumes HHMI-specific DNS, realm, and SSSD behavior. Changes there are high risk and should be treated as operational changes, not cosmetic refactors.
 - `base_sudo_users` is the bootstrap-persisted list of usernames to add to the local `sudo` group. It may include AD-backed usernames that resolve through SSSD after enrollment.
 - `base_local_sudo_users` remains a backward-compatible alias for older bootstrapped hosts and inventory, but new changes should use `base_sudo_users`.
