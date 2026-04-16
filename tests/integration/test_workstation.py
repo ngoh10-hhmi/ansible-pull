@@ -312,7 +312,7 @@ def test_browser_package_updates_timer_can_be_disabled() -> None:
         shutil.rmtree(workspace)
 
 
-def test_requested_sudo_users_are_added_to_local_sudo_group() -> None:
+def test_bootstrap_only_sudo_users_are_added_to_local_sudo_group() -> None:
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-"))
     username = f"apsudo{os.getpid()}"
 
@@ -324,7 +324,10 @@ def test_requested_sudo_users_are_added_to_local_sudo_group() -> None:
         configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
         append_text(
             Path("/etc/ansible/bootstrap-vars.yml"),
-            f"base_sudo_users:\n  - {username}\n",
+            (
+                "base_manage_bootstrap_sudo_users: true\n"
+                f"base_bootstrap_sudo_users:\n  - {username}\n"
+            ),
         )
 
         run("/usr/local/sbin/run-ansible-pull")
@@ -338,7 +341,7 @@ def test_requested_sudo_users_are_added_to_local_sudo_group() -> None:
         shutil.rmtree(workspace)
 
 
-def test_missing_requested_sudo_user_fails_pull() -> None:
+def test_missing_bootstrap_only_sudo_user_fails_pull() -> None:
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-missing-"))
     username = f"missingsudo{os.getpid()}"
 
@@ -348,7 +351,10 @@ def test_missing_requested_sudo_user_fails_pull() -> None:
         configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
         append_text(
             Path("/etc/ansible/bootstrap-vars.yml"),
-            f"base_sudo_users:\n  - {username}\n",
+            (
+                "base_manage_bootstrap_sudo_users: true\n"
+                f"base_bootstrap_sudo_users:\n  - {username}\n"
+            ),
         )
 
         with pytest.raises(subprocess.CalledProcessError):
@@ -358,7 +364,8 @@ def test_missing_requested_sudo_user_fails_pull() -> None:
         shutil.rmtree(workspace)
 
 
-def test_legacy_local_sudo_users_alias_still_works() -> None:
+@pytest.mark.parametrize("legacy_var_name", ["base_sudo_users", "base_local_sudo_users"])
+def test_legacy_persisted_sudo_users_are_ignored_on_scheduled_runs(legacy_var_name: str) -> None:
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-legacy-"))
     username = f"legacysudo{os.getpid()}"
 
@@ -370,13 +377,13 @@ def test_legacy_local_sudo_users_alias_still_works() -> None:
         configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
         append_text(
             Path("/etc/ansible/bootstrap-vars.yml"),
-            f"base_local_sudo_users:\n  - {username}\n",
+            f"{legacy_var_name}:\n  - {username}\n",
         )
 
         run("/usr/local/sbin/run-ansible-pull")
 
         sudo_group_members = host.check_output("getent group sudo").strip().split(":")[-1].split(",")
-        assert username in sudo_group_members
+        assert username not in sudo_group_members
     finally:
         restore_default_pull_state(workspace)
         run_allow_failure("gpasswd", "-d", username, "sudo")

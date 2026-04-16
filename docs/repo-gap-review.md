@@ -57,12 +57,15 @@ Update:
 
 Current behavior:
 
-- Bootstrap persists the requested usernames into
-  `base_sudo_users` before the AD enrollment converge.
+- Bootstrap can carry a temporary sudo-user list into the AD enrollment
+  converge.
 - The role now waits until after the AD join and SSSD configuration before
   resolving those usernames through NSS.
 - The role updates the local `sudo` group with `gpasswd` instead of using the
   Ansible `user` module.
+- The final persisted bootstrap vars intentionally omit that temporary sudo-user
+  list so later scheduled converges do not keep re-applying local sudo-group
+  membership.
 
 Why this was a gap:
 
@@ -73,10 +76,10 @@ Why this was a gap:
 Recommended change:
 
 - Keep the historical `/etc/group` model for now.
-- Treat `base_sudo_users` as "usernames that must resolve through NSS"
-  before the local `sudo` group is updated.
-- Keep `base_local_sudo_users` as a backward-compatible alias, but make
-  `base_sudo_users` the canonical name in docs and new bootstrap state.
+- Treat the bootstrap-only sudo-user list as "usernames that must resolve
+  through NSS" before the local `sudo` group is updated.
+- Do not persist those one-time bootstrap sudo-user choices into the final
+  scheduled-run state.
 
 Suggested validation:
 

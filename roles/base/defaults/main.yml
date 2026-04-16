@@ -17,8 +17,15 @@ base_workstation_ppas: []
 base_workstation_apt_repos: []
 
 base_workstation_extra_users: []
+# Bootstrap-only local sudo-group inputs. The bootstrap script writes these for
+# the AD-enrollment converge, then omits them from the final persisted
+# bootstrap vars so scheduled ansible-pull runs do not keep re-applying local
+# sudo membership.
+base_manage_bootstrap_sudo_users: false
+base_bootstrap_sudo_users: []
+# Legacy persisted values from older hosts. These are intentionally not acted
+# on during normal scheduled converges anymore.
 base_sudo_users: []
-# Backward-compatibility alias for older bootstrapped hosts and inventory.
 base_local_sudo_users: []
 # AD enrollment defaults off here so the role remains safe by default.
 # Bootstrap and inventory decide when a workstation should actually enroll.

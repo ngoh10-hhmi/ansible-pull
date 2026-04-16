@@ -23,7 +23,7 @@ Private repo later:
     --github-token-file /root/github-read-token.txt
 
 The script can also prompt for usernames that should be added to the local
-`sudo` group after the AD enrollment converge.
+`sudo` group during bootstrap after the AD enrollment converge.
 
 Bootstrap requires joining the hhmi.org Active Directory domain. The script
 will prompt for an AD username and hidden password before the domain-join
@@ -255,13 +255,14 @@ prompt_machine_identity() {
   prompt_sudo_users
 }
 
-# Prompt for optional usernames that should be added to the local sudo group.
+# Prompt for optional usernames that should be added to the local sudo group
+# during bootstrap after NSS/SSSD can resolve them.
 prompt_sudo_users() {
   local sudo_users_input
   local sanitized_input
   local user_name
 
-  read -r -p "Users to add to the local sudo group after join (comma-separated, AD usernames are okay, leave blank for none): " sudo_users_input
+  read -r -p "Users to add to the local sudo group during bootstrap after join (comma-separated, AD usernames are okay, leave blank for none): " sudo_users_input
 
   if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
     return
@@ -277,6 +278,8 @@ prompt_sudo_users() {
 # Persist bootstrap variables for Ansible.
 # This also pins repo/branch/playbook settings so role defaults do not
 # accidentally switch a test workstation back to main after first converge.
+# Optional local sudo-user membership is written only for the AD-enrollment
+# converge and omitted from the final persisted bootstrap state.
 write_bootstrap_vars() {
   local ad_enabled="$1"
   local ad_user="${2:-}"
@@ -285,7 +288,7 @@ write_bootstrap_vars() {
   local sudo_users_yaml=""
 
   if [[ "${include_sudo_users}" == "true" && "${#SUDO_USERS[@]}" -gt 0 ]]; then
-    sudo_users_yaml="base_sudo_users:"
+    sudo_users_yaml=$'base_manage_bootstrap_sudo_users: true\nbase_bootstrap_sudo_users:'
     for sudo_user in "${SUDO_USERS[@]}"; do
       sudo_users_yaml+=$'\n'"  - ${sudo_user}"
     done
@@ -414,8 +417,9 @@ main() {
   enable_pull_timer
   run_final_upgrade
   # Persist the final bootstrap state with AD enabled so subsequent scheduled
-  # runs know this machine is domain-joined and can re-apply AD config if needed.
-  write_bootstrap_vars "true" "${AD_JOIN_USER}" "true"
+  # runs know this machine is domain-joined and can re-apply AD config if
+  # needed, without re-applying one-time local sudo-group bootstrap choices.
+  write_bootstrap_vars "true" "${AD_JOIN_USER}" "false"
   print_ad_reboot_warning
 }
 

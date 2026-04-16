@@ -113,6 +113,10 @@ Bootstrap flow:
 7. It runs `/usr/local/sbin/run-ansible-pull`.
 8. It then collects AD credentials, performs the AD enrollment converge, enables the timer, does a final package upgrade, and persists the final bootstrap vars.
 
+Bootstrap-only sudo-user choices are applied during the AD enrollment
+converge after NSS/SSSD can resolve them, but they are not kept in the final
+persisted bootstrap vars for later scheduled runs.
+
 Bootstrap also supports optional Slack notification settings through
 `--slack-webhook` and `--slack-notify-success`, which are persisted into
 `/etc/ansible/pull.env`.
@@ -161,8 +165,12 @@ Recommended Git workflow:
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.
 - The repo does not manage general snap refresh policy. The browser timer only targets named installed browser snaps such as Firefox.
 - The AD join path currently assumes HHMI-specific DNS, realm, and SSSD behavior. Changes there are high risk and should be treated as operational changes, not cosmetic refactors.
-- `base_sudo_users` is the bootstrap-persisted list of usernames to add to the local `sudo` group. It may include AD-backed usernames that resolve through SSSD after enrollment.
-- `base_local_sudo_users` remains a backward-compatible alias for older bootstrapped hosts and inventory, but new changes should use `base_sudo_users`.
+- Bootstrap-only local sudo-group updates happen during bootstrap after AD/SSSD
+  is configured so requested usernames can resolve through NSS.
+- Those bootstrap sudo-user choices are intentionally not persisted for later
+  scheduled converges.
+- `base_sudo_users` and `base_local_sudo_users` may still exist on older hosts
+  as legacy state, but scheduled converges should not keep re-applying them.
 - AD-backed sudo access is still also modeled through sudoers entries and groups in `roles/base/tasks/ad_join.yml` when `ad_sudo_group` is used.
 - Slack webhook secrets must stay out of Git. `SLACK_WEBHOOK_URL` belongs in
   `/etc/ansible/pull.env`, not in inventory or committed files.

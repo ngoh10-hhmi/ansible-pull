@@ -54,11 +54,18 @@ The rough flow is:
 5. write `/etc/ansible/pull.env`
 6. write `/etc/ansible/bootstrap-vars.yml`
 7. install `/usr/local/sbin/run-ansible-pull`
-8. run the playbook once
+8. run the baseline playbook once
+9. obtain AD credentials and run the AD enrollment converge
+10. if optional sudo users were requested, validate them through NSS and add
+    them to the local `sudo` group during that bootstrap-only AD converge
 
 The key idea is that bootstrap writes machine-local values into files under
 `/etc/ansible/`. Those files persist on the workstation and are reused on later
 scheduled runs.
+
+The optional bootstrap sudo-user list is the exception: it is only written for
+the AD enrollment converge so SSSD/NSS can resolve those names first, and it is
+not kept in the final persisted bootstrap vars.
 
 ## What Happens On Every Scheduled Run
 
@@ -209,6 +216,10 @@ In practice, that means:
 - host vars add machine-specific exceptions
 - bootstrap vars can override all of the above when the machine must remember a
   local decision
+
+One-time bootstrap-only inputs, such as the temporary sudo-user list used
+during the AD enrollment converge, are intentionally not kept in the final
+persisted file.
 
 ## Why The Repo Is Not Split Into Many Roles
 

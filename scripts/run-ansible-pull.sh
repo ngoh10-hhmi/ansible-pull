@@ -364,6 +364,10 @@ build_playbook_args() {
   )
 
   if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
+    # This file carries the stable machine-local pull and identity settings
+    # that scheduled runs should keep honoring. One-time bootstrap-only inputs,
+    # such as temporary local sudo-user additions, are intentionally omitted
+    # from the final persisted file.
     PLAYBOOK_ARGS+=(--extra-vars "@${BOOTSTRAP_VARS_FILE}")
   fi
 }

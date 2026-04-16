@@ -411,17 +411,12 @@
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool
 
-- name: Build effective sudo user list
+- name: Build bootstrap-only sudo user list
   ansible.builtin.set_fact:
-    base_effective_sudo_users: >-
-      {{
-        (
-          (base_sudo_users | default([]))
-          + (base_local_sudo_users | default([]))
-        ) | unique
-      }}
+    base_effective_bootstrap_sudo_users: "{{ (base_bootstrap_sudo_users | default([])) | unique }}"
+  when: base_manage_bootstrap_sudo_users | bool
 
-- name: Require requested sudo users to resolve through NSS
+- name: Require bootstrap sudo users to resolve through NSS
   ansible.builtin.command:
     argv:
       - getent
@@ -432,10 +427,12 @@
   retries: 5
   delay: 2
   until: base_sudo_user_lookup.rc == 0
-  loop: "{{ base_effective_sudo_users }}"
-  when: (base_effective_sudo_users | length) > 0
+  loop: "{{ base_effective_bootstrap_sudo_users }}"
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - (base_effective_bootstrap_sudo_users | length) > 0
 
-- name: Add requested users to the local sudo group
+- name: Add bootstrap sudo users to the local sudo group
   ansible.builtin.command:
     argv:
       - gpasswd
@@ -447,5 +444,7 @@
     'already a member' not in
     ((base_sudo_group_membership.stdout | default(''))
     + (base_sudo_group_membership.stderr | default('')))
-  loop: "{{ base_effective_sudo_users }}"
-  when: (base_effective_sudo_users | length) > 0
+  loop: "{{ base_effective_bootstrap_sudo_users }}"
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - (base_effective_bootstrap_sudo_users | length) > 0

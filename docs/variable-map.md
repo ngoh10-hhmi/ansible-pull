@@ -113,18 +113,22 @@ Notes:
 | Variable | What it controls | Usually set in | Used by |
 | --- | --- | --- | --- |
 | `base_workstation_extra_users` | Optional local user accounts to create | shared or host inventory | user creation task in `roles/base/tasks/main.yml` |
-| `base_sudo_users` | Usernames to add to the local `sudo` group | usually bootstrap-persisted values, sometimes host inventory | NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
-| `base_local_sudo_users` | Backward-compatible alias for `base_sudo_users` | older bootstrap state or legacy inventory | merged into the same NSS lookup plus `gpasswd` tasks |
+| `base_manage_bootstrap_sudo_users` | Whether bootstrap should do the one-time local `sudo` group update | temporary bootstrap-written value | `when` guard for NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
+| `base_bootstrap_sudo_users` | Usernames to validate through NSS and add to the local `sudo` group during bootstrap only | temporary bootstrap-written value | NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
+| `base_sudo_users` | Legacy persisted sudo-user list from older hosts | older bootstrap state or legacy inventory | retained for compatibility context; no longer enforced on scheduled runs |
+| `base_local_sudo_users` | Older alias for `base_sudo_users` | older bootstrap state or legacy inventory | retained for compatibility context; no longer enforced on scheduled runs |
 
 Notes:
 
-- `base_sudo_users` may include local users or AD-backed usernames.
-- AD-backed usernames are added to the local `sudo` group after the AD join and
-  SSSD configuration steps run.
-- Entries in `base_sudo_users` must resolve through NSS before the role
-  will update the local `sudo` group.
-- `base_local_sudo_users` is still accepted so already-bootstrapped machines do
-  not break, but new changes should use `base_sudo_users`.
+- `base_bootstrap_sudo_users` may include local users or AD-backed usernames.
+- AD-backed usernames are added to the local `sudo` group only during bootstrap,
+  after the AD join and SSSD configuration steps run.
+- Entries in `base_bootstrap_sudo_users` must resolve through NSS before the
+  role will update the local `sudo` group.
+- Scheduled `ansible-pull` runs do not keep re-applying local sudo-group
+  membership from persisted bootstrap data.
+- `base_sudo_users` and `base_local_sudo_users` may still appear on older
+  machines, but they are no longer acted on by normal converges.
 
 ## AD And Identity Variables
 
@@ -166,10 +170,16 @@ The bootstrap script normally writes these into
 - `target_hostname`
 - `machine_type`
 - `base_ad_enroll`
-- `base_sudo_users`
 
 These values are then passed to Ansible as `--extra-vars` on every later run,
 which gives them high precedence.
+
+During the bootstrap-only AD enrollment converge, the script may also write
+these temporary values before immediately removing them from the final
+persisted state:
+
+- `base_manage_bootstrap_sudo_users`
+- `base_bootstrap_sudo_users`
 
 That is why a workstation can remember:
 
@@ -194,7 +204,6 @@ care about most:
 - `base_browser_update_snaps`
 - `base_workstation_enable_unattended_upgrades`
 - `base_workstation_unattended_upgrade_days`
-- `base_sudo_users`
 - `ad_sudo_group`
 
 If you are troubleshooting bootstrap or branch behavior, also look at:
