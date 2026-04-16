@@ -17,6 +17,7 @@ Key features include baseline configurations, unattended security upgrades, and 
 ### Critical Repository Structure
 - **Bootstrapping:** `scripts/bootstrap-ubuntu.sh` (first run on fresh Ubuntu)
 - **Ongoing Automation:** `scripts/run-ansible-pull.sh` (recurring converge wrapper)
+- **Branch Management:** `scripts/switch-pull-branch.sh` (updates branch/repo settings)
 - **Primary Playbooks and Roles:**
   - `playbooks/workstation.yml`: Core execution playbook.
   - `roles/base/tasks/main.yml`: Baseline package setup, un-attended upgrades, and local users.
@@ -28,21 +29,29 @@ Key features include baseline configurations, unattended security upgrades, and 
 
 ### Validation & Testing Requirements
 When making code modifications, run the following validations:
-1. **Setup:** `python -m pip install -r requirements-dev.txt`
+1. **Setup:** `./scripts/setup-dev.sh` and `make doctor`
 2. **Linting (Pre-commit matches CI):** 
-   - `pre-commit run --all-files`
+   - `make lint` or `pre-commit run --all-files`
    - Individual linters available: `yamllint`, `ansible-lint`, `ansible-syntax-check`, `shellcheck`
 3. **Integration Testing:** Requires root on a bootstrapped Ubuntu host.
-   - `sudo -E env "PATH=$PATH" python -m pytest -q tests/integration`
+   - `make integration` or `sudo -E env "PATH=$PATH" python -m pytest -q tests/integration`
 
 ### Operational Invariants & Gotchas
 - **AD Join & SSSD:** Edits involving Active Directory enrollment or sudo policies are considered high-risk operational changes, not cosmetic. Assume HHMI-specific realms and DNS behaviors.
-- **Sudo Access Management:** Local users use the `user` module in `roles/base/tasks/main.yml`. AD-backed sudo access is modeled via sudoers entries/groups in `ad_join.yml`. Do not mix the two.
-- **Package Management:** The active initial package baseline lives in `inventory/group_vars/all.yml` (do not be fooled by empty defaults in the base role).
+- **Sudo Access Management:** 
+  - `base_sudo_users` is the preferred list for local `sudo` group membership.
+  - `base_local_sudo_users` is a legacy alias for `base_sudo_users`.
+  - AD-backed sudo access is also modeled via sudoers entries/groups in `ad_join.yml`.
+- **Package Management:** 
+  - The active initial package baseline lives in `inventory/group_vars/all.yml`.
+  - `apt-refresh.timer` refreshes APT package lists hourly.
+  - `managed-package-updates.timer` upgrades `base_workstation_base_packages` daily.
+  - `browser-package-updates.timer` upgrades browser packages (APT and snap) daily.
 - **Overrides:** Prefer using `base_workstation_extra_packages` to override or add software to specific hosts rather than rewriting the baseline list.
 
 ### Change Protocols
 - Modifying bootstrap logic requires synchronized updates to both `scripts/bootstrap-ubuntu.sh` and `scripts/run-ansible-pull.sh`.
+- Modifying timer or branch-switching behavior requires updates to `scripts/switch-pull-branch.sh` and relevant tests.
 - AD end-to-end, third-party APT onboarding, and specific idempotency tests have gaps in current CI coverage; always flag these for heavy manual validation.
 - **NO SECRETS:** Ensure zero credentials exist in git. Active repo credentials or local secrets belong strictly on the target machine.
-  - **Slack Notifications:** Set `SLACK_WEBHOOK_URL` natively inside `/etc/ansible/pull.env`. You can inject this during initial enrollment via `./bootstrap-ubuntu.sh --slack-webhook <url>` or push it in manually. It defaults to alerting on successes but this can be muted by modifying `SLACK_NOTIFY_SUCCESS=false` in the same environment file.
+  - **Slack Notifications:** Set `SLACK_WEBHOOK_URL` natively inside `/etc/ansible/pull.env`. You can inject this during initial enrollment via `./bootstrap-ubuntu.sh --slack-webhook <url>` or push it in manually. It defaults to alerting on failures; success notifications are opt-in via `SLACK_NOTIFY_SUCCESS=true`.
