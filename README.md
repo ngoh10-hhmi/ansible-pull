@@ -211,7 +211,11 @@ These are the most common day-to-day changes in this repo:
 If you want the background on why those variables work that way, see
 [docs/variable-map.md](docs/variable-map.md).
 
+## APT Maintenance
+For details on the scheduled APT refresh and targeted package update scripts, see [docs/apt-maintenance.md](docs/apt-maintenance.md).
+
 ## What gets updated automatically
+
 
 By default this repo is aimed at:
 
