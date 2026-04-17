@@ -286,6 +286,18 @@
     mode: "0644"
   notify: Reload systemd
 
+- name: Install workstation health check helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/check-workstation.sh'
+      ) }}
+    dest: /usr/local/sbin/check-workstation
+    owner: root
+    group: root
+    mode: "0755"
+
 # Flush handlers here so systemd is reloaded before the subsequent
 # systemd_service tasks try to enable or start the timer units.  Without this,
 # newly installed unit files would not be visible to systemctl yet.
