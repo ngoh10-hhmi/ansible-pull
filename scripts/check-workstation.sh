@@ -14,8 +14,9 @@ NC='\033[0m' # No Color
 # Helper to print status with colors
 status_msg() {
   local color="$1"
-  local msg="$2"
-  printf "${color}%-20s${NC} %s\n" "$msg" ""
+  local label="$2"
+  local msg="${3:-}"
+  printf "${color}%-20s${NC} %s\n" "$label" "$msg"
 }
 
 # Check if the script is running with sufficient privileges
@@ -26,7 +27,7 @@ check_privileges() {
   fi
 }
 
-# 1. Verify ansible-pull.timer is active and scheduled
+# 1. Verify ansible-pull.timer is active and enabled
 check_timer() {
   echo "--- Checking ansible-pull timer ---"
   if systemctl is-active --quiet ansible-pull.timer; then
@@ -45,6 +46,9 @@ check_timer() {
 
 # 2. Verify the most recent run was successful
 check_last_run() {
+  local last_status_line=""
+  local last_status_text=""
+
   echo ""
   echo "--- Checking last ansible-pull run ---"
 
@@ -66,16 +70,55 @@ check_last_run() {
     return 1
   fi
 
-  # Check the last line of the log for success or failure.
-  # The run_ansible-pull.sh script logs "Completed ansible-pull run successfully." on success.
-  if grep -q "Completed ansible-pull run successfully." "$RUN_LOG"; then
-    status_msg "$GREEN" "[PASS]" "Last run was successful."
-  else
-    status_msg "$RED" "[FAIL]" "Last run failed or did not complete successfully."
-    echo "Last log entry:"
-    tail -n 5 "$RUN_LOG" | sed 's/^/  /'
+  # Inspect only the most recent terminal status line from the wrapper rather
+  # than any older success elsewhere in the logfile.
+  last_status_line="$(
+    grep -E "Completed ansible-pull run successfully\.|Completed ansible-pull run\.|ansible-pull run failed with exit code|Skipped ansible-pull run because another run is already in progress\." "$RUN_LOG" \
+      | tail -n 1 || true
+  )"
+
+  if [[ -z "$last_status_line" ]]; then
+    status_msg "$RED" "[FAIL]" "Could not determine the outcome of the most recent ansible-pull run."
+    echo "Recent log lines:"
+    tail -n 10 "$RUN_LOG" | sed 's/^/  /'
     return 1
   fi
+
+  last_status_text="${last_status_line#*] }"
+
+  case "$last_status_line" in
+    *"Completed ansible-pull run successfully."*|*"Completed ansible-pull run."*)
+      status_msg "$GREEN" "[PASS]" "Most recent run completed successfully."
+      ;;
+    *"Skipped ansible-pull run because another run is already in progress."*)
+      status_msg "$YELLOW" "[WARN]" "Most recent invocation was skipped because another run held the lock."
+      echo "Last status line:"
+      printf '  %s\n' "$last_status_text"
+      ;;
+    *"ansible-pull run failed with exit code"*)
+      status_msg "$RED" "[FAIL]" "Most recent run failed."
+      echo "Last status line:"
+      printf '  %s\n' "$last_status_text"
+      return 1
+      ;;
+    *)
+      status_msg "$RED" "[FAIL]" "Unrecognized ansible-pull terminal status."
+      echo "Last status line:"
+      printf '  %s\n' "$last_status_text"
+      return 1
+      ;;
+  esac
+}
+
+check_realm_membership() {
+  local realm_output=""
+
+  if ! command -v realm >/dev/null 2>&1; then
+    return 1
+  fi
+
+  realm_output="$(realm list 2>/dev/null || true)"
+  grep -Eiq '(^|\s)(hhmi\.org|domain-name:[[:space:]]*hhmi\.org)($|\s)' <<<"$realm_output"
 }
 
 # 3. If AD enrollment is enabled, verify domain join
@@ -92,14 +135,17 @@ check_ad_status() {
   fi
 
   if [[ "$ad_enabled" == "true" ]]; then
-    # Check if the machine can resolve/talk to the domain via 'id' or 'realm'
-    # We attempt to check if the local user can see domain users or if realm list works.
-    if command -v realm >/dev/null 2>&1 && realm list | grep -q "\["; then
-      status_msg "$GREEN" "[PASS]" "Machine is joined to Active Directory."
-    elif id "hhmi.org" >/dev/null 2>&1; then
-       status_msg "$GREEN" "[PASS]" "Machine is joined to Active Directory (verified via NSS/id)."
+    if check_realm_membership; then
+      status_msg "$GREEN" "[PASS]" "Machine reports an hhmi.org realm membership."
     else
-      status_msg "$RED" "[FAIL]" "Machine is NOT joined to Active Directory (expected based on configuration)."
+      status_msg "$RED" "[FAIL]" "Machine does not appear to be joined to hhmi.org."
+      return 1
+    fi
+
+    if systemctl is-active --quiet sssd; then
+      status_msg "$GREEN" "[PASS]" "sssd is active."
+    else
+      status_msg "$RED" "[FAIL]" "sssd is not active."
       return 1
     fi
   else
