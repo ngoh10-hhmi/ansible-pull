@@ -4,6 +4,8 @@ set -euo pipefail
 # Static file locations used by scheduled ansible-pull runs.
 ENV_FILE="/etc/ansible/pull.env"
 BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
 
 # Runtime variables loaded and built from ENV_FILE.
 HOSTNAME_SHORT=""
@@ -18,22 +20,29 @@ RUN_STATUS="starting"
 CURRENT_PHASE="starting"
 RUN_STARTED_AT=0
 
+source_script_lib() {
+  local filename="$1"
+  local candidate=""
+
+  for candidate in "${SCRIPT_DIR}/lib/${filename}" "${SHARED_LIB_DIR}/${filename}"; do
+    if [[ -f "${candidate}" ]]; then
+      # shellcheck disable=SC1090
+      source "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "Missing helper library ${filename}" >&2
+  exit 1
+}
+
+source_script_lib "envfile.sh"
+source_script_lib "git_sync.sh"
+
 # Load configured pull settings from /etc/ansible/pull.env.
 load_environment() {
-  if [[ ! -f "${ENV_FILE}" ]]; then
-    echo "Missing ${ENV_FILE}" >&2
-    exit 1
-  fi
-
-  # set -a / set +a automatically exports every variable assigned while the
-  # flag is active, so sourcing the env file makes REPO_URL, BRANCH, etc.
-  # available to child processes (e.g. ansible-playbook) without explicit
-  # export statements.
-  set -a
-  # shellcheck disable=SC1091
-  # shellcheck source=/etc/ansible/pull.env
-  source "${ENV_FILE}"
-  set +a
+  load_env_file "${ENV_FILE}"
+  validate_pull_env
 }
 
 # Prepare directories and derive per-host runtime file paths.
@@ -423,45 +432,7 @@ acquire_lock_or_exit() {
 
 # Sync the local checkout to the latest state of the configured branch.
 sync_repository_checkout() {
-  # Check if we have a valid git repository.
-  if [[ -d "${DEST}/.git" ]] && git -C "${DEST}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    log "Existing repository found at ${DEST}. Attempting to sync..."
-
-    # Use a subshell to allow us to catch failures within the sync sequence.
-    # If any command in this block fails, the subshell returns a non-zero exit code.
-    if (
-      # Stale lock files are left behind when a previous git operation was
-      # interrupted (e.g. by a systemd timeout or SIGKILL).  Remove them before
-      # any git commands so we don't silently fail on the next run.
-      rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
-
-      if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
-        git -C "${DEST}" remote set-url origin "${REPO_URL}"
-      else
-        git -C "${DEST}" remote add origin "${REPO_URL}"
-      fi
-
-      git -C "${DEST}" fetch --prune origin "${BRANCH}"
-      git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
-      git -C "${DEST}" reset --hard "origin/${BRANCH}"
-      git -C "${DEST}" clean -fdx
-    ); then
-      log "Successfully synced existing repository."
-    else
-      log "Error during sync of existing repository. Wiping ${DEST} to allow for fresh clone next time."
-      rm -rf "${DEST}"
-      return 1
-    fi
-  else
-    log "No valid repository found at ${DEST}. Attempting fresh clone..."
-    rm -rf "${DEST}"
-    if git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"; then
-      log "Successfully cloned repository."
-    else
-      log "Error: Failed to clone repository into ${DEST}."
-      return 1
-    fi
-  fi
+  sync_checkout_or_clone "${DEST}" "${REPO_URL}" "${BRANCH}"
 }
 
 # Execute the configured playbook with consistent local-connection arguments.

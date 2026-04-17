@@ -49,10 +49,13 @@ sudo ./bootstrap-ubuntu.sh \
 ```
 
 ### Option B: On an Already Running Machine
-Append the environment variable directly into the un-tracked runtime file:
+Edit the untracked runtime file on the machine:
 ```bash
-sudo bash -c 'echo "SLACK_WEBHOOK_URL=\"https://hooks.slack.com/services/...\"" >> /etc/ansible/pull.env'
+sudoedit /etc/ansible/pull.env
 ```
+
+The runtime file is now written through a shared helper that shell-escapes its
+values. If you hand-edit it, keep the existing shell-style `KEY=value` format.
 
 ### Configuring Alert Behavior
 Webhook integrations are configured natively within the identical `/etc/ansible/pull.env` runtime file.

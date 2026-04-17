@@ -49,6 +49,21 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 
 The wrapper writes to both journald and the per-host logfile.
 
+## Bootstrap-specific failures
+
+If first-run bootstrap fails, inspect:
+
+```bash
+sudo cat /etc/ansible/pull.env
+sudo cat /etc/ansible/bootstrap-vars.yml
+systemctl status ansible-pull.timer
+journalctl -u ansible-pull.service -n 100 --no-pager
+```
+
+Bootstrap now treats timer enablement as required. If the machine finished AD
+enrollment but `ansible-pull.timer` is not enabled, treat the bootstrap as
+incomplete and fix that before relying on scheduled converges.
+
 ## Check timer state
 
 Verify that the pull timer is installed, enabled, and scheduled:

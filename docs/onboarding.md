@@ -64,6 +64,9 @@ sudo /tmp/bootstrap-ubuntu.sh \
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
 The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate usernames that should be added to the local `sudo` group once the join completes. That list can include AD usernames if they resolve through SSSD after enrollment.
+Bootstrap is intentionally opinionated for freshly imaged HHMI systems: after
+the timer is enabled it runs one final `apt-get upgrade -y` to bring the image
+current immediately.
 
 ## 6. Verify
 
@@ -77,6 +80,9 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
 
 The pull wrapper now writes to both journald and the per-host logfile, so either view should show the same run output.
+If `ansible-pull.timer` is not enabled at the end of bootstrap, treat that as a
+bootstrap failure and inspect `systemctl status ansible-pull.timer` before
+proceeding.
 
 ## 7. Ongoing workflow
 

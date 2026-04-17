@@ -79,8 +79,11 @@ sudo /tmp/bootstrap-ubuntu.sh \
   --branch main
 ```
 
-The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper, runs the playbook once, and enables the timer.
+The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper plus its shared helper libraries, runs the playbook once, performs the AD enrollment converge, rewrites the final stable bootstrap state, and enables the timer.
 During bootstrap you will be prompted for an AD username and hidden password for the required `hhmi.org` domain join, and you can also enter a comma-separated list of existing local users that should be added to the `sudo` group as the final bootstrap action.
+The final blanket `apt-get upgrade -y` is intentional here because this flow is
+aimed at freshly imaged HHMI-managed Ubuntu systems, not arbitrary BYOD
+machines.
 
 ## 6. Verify the first run
 
@@ -101,6 +104,11 @@ tail -n 100 /var/log/ansible-pull/ansible-pull-$(hostname -s).log
 ```
 
 Both commands should show the same run stream because the wrapper writes to the logfile and stdout/stderr for systemd.
+If the timer was not enabled successfully, stop there and inspect:
+
+```bash
+systemctl status ansible-pull.timer
+```
 
 Check unattended upgrade settings:
 

@@ -50,14 +50,17 @@ The rough flow is:
 1. install Ansible and a few required packages
 2. create `/etc/ansible` and local runtime directories
 3. clone this repo into `/var/lib/ansible-pull`
-4. prompt for hostname, machine type, and optional sudo users
+4. install `/usr/local/sbin/run-ansible-pull` plus its shared helper libraries
 5. write `/etc/ansible/pull.env`
-6. write `/etc/ansible/bootstrap-vars.yml`
-7. install `/usr/local/sbin/run-ansible-pull`
+6. prompt for hostname, machine type, and optional sudo users
+7. write an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`
 8. run the baseline playbook once
-9. obtain AD credentials and run the AD enrollment converge
+9. obtain AD credentials, write a temporary AD-phase bootstrap state, and run
+   the AD enrollment converge
 10. if optional sudo users were requested, validate them through NSS and add
     them to the local `sudo` group during that bootstrap-only AD converge
+11. rewrite the final stable bootstrap vars without one-time sudo keys
+12. enable the timer and run a final package upgrade
 
 The key idea is that bootstrap writes machine-local values into files under
 `/etc/ansible/`. Those files persist on the workstation and are reused on later
@@ -66,6 +69,10 @@ scheduled runs.
 The optional bootstrap sudo-user list is the exception: it is only written for
 the AD enrollment converge so SSSD/NSS can resolve those names first, and it is
 not kept in the final persisted bootstrap vars.
+
+Bootstrap now rewrites that final stable bootstrap state before it enables the
+timer. If timer enablement fails, bootstrap stops with a clear error instead of
+pretending the machine is fully enrolled.
 
 ## What Happens On Every Scheduled Run
 
@@ -220,6 +227,9 @@ In practice, that means:
 One-time bootstrap-only inputs, such as the temporary sudo-user list used
 during the AD enrollment converge, are intentionally not kept in the final
 persisted file.
+
+The sibling file `/etc/ansible/pull.env` is written through a shared helper
+that shell-escapes its values before later runtime scripts source it.
 
 ## Why The Repo Is Not Split Into Many Roles
 

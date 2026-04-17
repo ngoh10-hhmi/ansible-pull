@@ -79,6 +79,8 @@ Notes:
 - Bootstrap writes the repo, branch, playbook, directory, and log values into
   `/etc/ansible/bootstrap-vars.yml` so the machine keeps using the same pull
   settings on later runs.
+- The runtime copy in `/etc/ansible/pull.env` is written through a shared
+  helper that shell-escapes values before runtime scripts source them.
 - `switch-pull-branch.sh` updates these persisted values when you change a
   machine from `main` to `testing` or back.
 
@@ -180,6 +182,10 @@ persisted state:
 
 - `base_manage_bootstrap_sudo_users`
 - `base_bootstrap_sudo_users`
+
+Bootstrap rewrites the final stable state before it enables
+`ansible-pull.timer`, so timer failures should not leave the machine tracking a
+temporary bootstrap-only sudo-user list.
 
 That is why a workstation can remember:
 

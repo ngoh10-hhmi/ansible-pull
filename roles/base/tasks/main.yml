@@ -127,6 +127,38 @@
           create 0644 root root
       }
 
+- name: Ensure ansible-pull helper library directory exists
+  ansible.builtin.file:
+    path: /usr/local/lib/ansible-pull
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Install ansible-pull shared env-file helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/lib/envfile.sh'
+      ) }}
+    dest: /usr/local/lib/ansible-pull/envfile.sh
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Install ansible-pull shared git sync helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/lib/git_sync.sh'
+      ) }}
+    dest: /usr/local/lib/ansible-pull/git_sync.sh
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:
     content: >-

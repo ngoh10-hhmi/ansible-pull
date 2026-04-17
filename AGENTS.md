@@ -105,17 +105,22 @@ Dependency and CI-tooling changes usually involve:
 Bootstrap flow:
 
 1. `scripts/bootstrap-ubuntu.sh` installs bootstrap dependencies.
-2. It writes `/etc/ansible/pull.env`.
-3. It clones the repo into `/var/lib/ansible-pull`.
-4. It installs `/usr/local/sbin/run-ansible-pull`.
+2. It clones the repo into `/var/lib/ansible-pull`.
+3. It installs `/usr/local/sbin/run-ansible-pull` plus its shared helper libraries.
+4. It writes `/etc/ansible/pull.env` through the shared env-file helper.
 5. It prompts for hostname, machine type, and optional sudo users.
-6. It writes `/etc/ansible/bootstrap-vars.yml`.
+6. It writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`.
 7. It runs `/usr/local/sbin/run-ansible-pull`.
-8. It then collects AD credentials, performs the AD enrollment converge, enables the timer, does a final package upgrade, and persists the final bootstrap vars.
+8. It then collects AD credentials, writes a temporary AD-phase bootstrap state, and performs the AD enrollment converge.
+9. It rewrites the final stable bootstrap vars without one-time sudo keys, enables the timer, and does a final package upgrade.
 
 Bootstrap-only sudo-user choices are applied during the AD enrollment
 converge after NSS/SSSD can resolve them, but they are not kept in the final
 persisted bootstrap vars for later scheduled runs.
+
+Bootstrap now treats timer enablement as required. If `ansible-pull.timer`
+cannot be enabled, bootstrap should fail loudly rather than silently
+continuing.
 
 Bootstrap also supports optional Slack notification settings through
 `--slack-webhook` and `--slack-notify-success`, which are persisted into
@@ -139,6 +144,9 @@ Variable precedence:
 - `switch-pull-branch.sh` must keep `/etc/ansible/pull.env` and `/etc/ansible/bootstrap-vars.yml` aligned.
 - `switch-pull-branch.sh` preserves Slack-related values stored in
   `/etc/ansible/pull.env`.
+- `/etc/ansible/pull.env` is shell-escaped through a shared helper and should
+  still be treated as machine-local runtime state rather than hand-maintained
+  configuration.
 
 Inventory behavior:
 
@@ -169,6 +177,9 @@ Recommended Git workflow:
   is configured so requested usernames can resolve through NSS.
 - Those bootstrap sudo-user choices are intentionally not persisted for later
   scheduled converges.
+- The final `apt-get upgrade -y` in bootstrap is intentional because bootstrap
+  is expected to run on freshly imaged HHMI systems that should be brought
+  current immediately.
 - `base_sudo_users` and `base_local_sudo_users` may still exist on older hosts
   as legacy state, but scheduled converges should not keep re-applying them.
 - AD-backed sudo access is still also modeled through sudoers entries and groups in `roles/base/tasks/ad_join.yml` when `ad_sudo_group` is used.

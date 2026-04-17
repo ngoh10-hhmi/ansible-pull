@@ -8,10 +8,34 @@ set -euo pipefail
 
 ENV_FILE="/etc/ansible/pull.env"
 BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
 
 NEW_BRANCH=""
 NEW_REPO_URL=""
 RUN_NOW="false"
+
+die() {
+  echo "$*" >&2
+  exit 1
+}
+
+source_script_lib() {
+  local filename="$1"
+  local candidate=""
+
+  for candidate in "${SCRIPT_DIR}/lib/${filename}" "${SHARED_LIB_DIR}/${filename}"; do
+    if [[ -f "${candidate}" ]]; then
+      # shellcheck disable=SC1090
+      source "${candidate}"
+      return 0
+    fi
+  done
+
+  die "Missing helper library ${filename}"
+}
+
+source_script_lib "envfile.sh"
 
 usage() {
   cat <<'EOF'
@@ -23,11 +47,6 @@ Examples:
   sudo switch-pull-branch.sh --branch main
   sudo switch-pull-branch.sh --branch testing --run-now
 EOF
-}
-
-die() {
-  echo "$*" >&2
-  exit 1
 }
 
 parse_args() {
@@ -68,18 +87,8 @@ require_root() {
 }
 
 load_existing_pull_env() {
-  if [[ ! -f "${ENV_FILE}" ]]; then
-    die "Missing ${ENV_FILE}. Run bootstrap first."
-  fi
-
-  # set -a / set +a causes every variable assigned during the source to be
-  # automatically exported, making them available to child processes without
-  # explicit export statements.
-  set -a
-  # shellcheck disable=SC1091
-  # shellcheck source=/etc/ansible/pull.env
-  source "${ENV_FILE}"
-  set +a
+  load_env_file "${ENV_FILE}" || die "Missing ${ENV_FILE}. Run bootstrap first."
+  validate_pull_env || die "Invalid ${ENV_FILE}. Fix it before switching branches."
 }
 
 apply_branch_settings() {
@@ -92,16 +101,9 @@ apply_branch_settings() {
 write_pull_env() {
   # Keep existing Slack settings intact so future scheduled runs preserve the
   # same failure summaries and optional success notifications.
-  cat > "${ENV_FILE}" <<EOF
-REPO_URL="${REPO_URL}"
-BRANCH="${BRANCH}"
-PLAYBOOK="${PLAYBOOK}"
-DEST="${DEST}"
-LOG_DIR="${LOG_DIR}"
-SLACK_WEBHOOK_URL="${SLACK_WEBHOOK_URL:-}"
-SLACK_NOTIFY_SUCCESS="${SLACK_NOTIFY_SUCCESS:-false}"
-EOF
-  chmod 0600 "${ENV_FILE}"
+  write_pull_env_file "${ENV_FILE}"
+  load_env_file "${ENV_FILE}"
+  validate_pull_env
 }
 
 write_bootstrap_vars() {
