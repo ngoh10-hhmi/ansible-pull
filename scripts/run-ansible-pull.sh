@@ -423,23 +423,44 @@ acquire_lock_or_exit() {
 
 # Sync the local checkout to the latest state of the configured branch.
 sync_repository_checkout() {
-  if [[ -d "${DEST}/.git" ]]; then
-    # Stale lock files are left behind when a previous git operation was
-    # interrupted (e.g. by a systemd timeout or SIGKILL).  Remove them before
-    # any git commands so we don't silently fail on the next run.
-    rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
-    if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
-      git -C "${DEST}" remote set-url origin "${REPO_URL}"
+  # Check if we have a valid git repository.
+  if [[ -d "${DEST}/.git" ]] && git -C "${DEST}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    log "Existing repository found at ${DEST}. Attempting to sync..."
+
+    # Use a subshell to allow us to catch failures within the sync sequence.
+    # If any command in this block fails, the subshell returns a non-zero exit code.
+    if (
+      # Stale lock files are left behind when a previous git operation was
+      # interrupted (e.g. by a systemd timeout or SIGKILL).  Remove them before
+      # any git commands so we don't silently fail on the next run.
+      rm -f "${DEST}/.git/index.lock" "${DEST}/.git/shallow.lock" "${DEST}/.git/HEAD.lock"
+
+      if git -C "${DEST}" remote get-url origin >/dev/null 2>&1; then
+        git -C "${DEST}" remote set-url origin "${REPO_URL}"
+      else
+        git -C "${DEST}" remote add origin "${REPO_URL}"
+      fi
+
+      git -C "${DEST}" fetch --prune origin "${BRANCH}"
+      git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
+      git -C "${DEST}" reset --hard "origin/${BRANCH}"
+      git -C "${DEST}" clean -fdx
+    ); then
+      log "Successfully synced existing repository."
     else
-      git -C "${DEST}" remote add origin "${REPO_URL}"
+      log "Error during sync of existing repository. Wiping ${DEST} to allow for fresh clone next time."
+      rm -rf "${DEST}"
+      return 1
     fi
-    git -C "${DEST}" fetch --prune origin "${BRANCH}"
-    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
-    git -C "${DEST}" reset --hard "origin/${BRANCH}"
-    git -C "${DEST}" clean -fdx
   else
+    log "No valid repository found at ${DEST}. Attempting fresh clone..."
     rm -rf "${DEST}"
-    git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
+    if git clone --branch "${BRANCH}" "${REPO_URL}" "${DEST}"; then
+      log "Successfully cloned repository."
+    else
+      log "Error: Failed to clone repository into ${DEST}."
+      return 1
+    fi
   fi
 }
 
