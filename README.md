@@ -55,7 +55,7 @@ If you want a simple Git worktree layout for `testing` and `main`, read
 - `docs/variable-map.md`: quick reference for the main variables
 - `docs/worktree-setup.md`: recommended Git worktree layout for this repo
 - `Makefile`: common local development commands
-- `.python-version`: expected local Python version for developer tooling
+- `.python-version`: preferred local Python version for developer tooling
 - `playbooks/workstation.yml`: main workstation playbook
 - `inventory/group_vars/all.yml`: shared settings for every Ubuntu workstation
 - `roles/base/`: baseline Ubuntu workstation configuration
@@ -288,7 +288,9 @@ Notes:
 
 - `pre-commit` runs locally. It does not upload anything to GitHub by itself.
 - The pinned toolchain currently expects Python 3.11 or newer. If your default
-  `python3` is older, use `python3.11` when creating the virtualenv.
+  `python3` is older, use `python3.11` when creating the virtualenv. If your
+  default `python3` is already 3.11 or newer, `./scripts/setup-dev.sh` will use
+  that.
 - In this repo, the configured hooks use system-installed tools, so
   `shellcheck` must also be available on the machine.
 - If you use the virtualenv approach above, activate it with

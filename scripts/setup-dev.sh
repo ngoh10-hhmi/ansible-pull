@@ -17,15 +17,16 @@ pick_python() {
   fi
 
   if command -v python3 >/dev/null 2>&1; then
-    local version
+    local version major minor
     version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
-    if [[ "${version}" == "3.11" || "${version}" == "3.12" || "${version}" == "3.13" ]]; then
+    IFS=. read -r major minor <<<"${version}"
+    if [[ "${major}" -eq 3 && "${minor}" -ge 11 ]]; then
       PYTHON_BIN="$(command -v python3)"
       return
     fi
   fi
 
-  die "Python 3.11 or newer is required. Install python3.11 and rerun this script."
+  die "Python 3.11 or newer is required. Install Python 3.11+ and rerun this script."
 }
 
 check_shellcheck() {
