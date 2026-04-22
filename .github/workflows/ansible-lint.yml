@@ -37,7 +37,7 @@ jobs:
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Run unit tests
-        run: python -m pytest -q tests/test_run_ansible_pull.py
+        run: python -m pytest -q tests/test_run_ansible_pull.py tests/test_bootstrap_ubuntu.py
 
   integration:
     runs-on: ${{ matrix.os }}

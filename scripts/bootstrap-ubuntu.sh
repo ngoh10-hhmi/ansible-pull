@@ -349,6 +349,16 @@ install_runtime_support() {
   install -m 0755 "${DEST}/scripts/run-ansible-pull.sh" /usr/local/sbin/run-ansible-pull
 }
 
+# Keep bootstrap hostname inputs compatible with normal short-hostname rules:
+# 1-15 chars, only letters/digits/hyphens, and no leading/trailing hyphen.
+is_valid_short_hostname() {
+  local hostname="${1:-}"
+
+  [[ -n "${hostname}" ]] || return 1
+  [[ ${#hostname} -le 15 ]] || return 1
+  [[ "${hostname}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,13}[A-Za-z0-9])?$ ]]
+}
+
 # Prompt for machine identity metadata used by the Ansible role.
 prompt_machine_identity() {
   local current_short_hostname
@@ -366,6 +376,8 @@ prompt_machine_identity() {
       echo "Error: Hostname exceeds 15 characters. Please try again."
     elif [[ -z "${SHORT_HOSTNAME}" ]]; then
       echo "Error: Hostname cannot be empty."
+    elif ! is_valid_short_hostname "${SHORT_HOSTNAME}"; then
+      echo "Error: Hostname must use only letters, numbers, or internal hyphens."
     else
       break
     fi

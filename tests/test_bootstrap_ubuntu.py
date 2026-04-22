@@ -168,6 +168,37 @@ def test_enable_pull_timer_failure_is_fatal() -> None:
     assert "Failed to enable ansible-pull.timer." in result.stderr
 
 
+def test_is_valid_short_hostname_accepts_expected_values() -> None:
+    run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            valid_names=("hhmi-test" "ws01" "A" "node-9")
+            for name in "${valid_names[@]}"; do
+              is_valid_short_hostname "$name"
+            done
+            """
+        )
+    )
+
+
+def test_is_valid_short_hostname_rejects_invalid_values() -> None:
+    run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            invalid_names=("" "bad name" "-bad" "bad-" "bad_name" "bad.name" "hostname-that-is-too-long")
+            for name in "${invalid_names[@]}"; do
+              if is_valid_short_hostname "$name"; then
+                printf 'unexpectedly accepted: %s\n' "$name" >&2
+                exit 1
+              fi
+            done
+            """
+        )
+    )
+
+
 def test_pull_env_round_trip_preserves_shell_metacharacters(tmp_path: Path) -> None:
     env_file = tmp_path / "pull.env"
     result = run_bash(
