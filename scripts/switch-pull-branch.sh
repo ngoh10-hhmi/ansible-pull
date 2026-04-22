@@ -91,6 +91,12 @@ load_existing_pull_env() {
   validate_pull_env || die "Invalid ${ENV_FILE}. Fix it before switching branches."
 }
 
+require_bootstrap_vars_file() {
+  if [[ ! -f "${BOOTSTRAP_VARS_FILE}" ]]; then
+    die "Missing ${BOOTSTRAP_VARS_FILE}. Refusing to rewrite bootstrap state without the existing machine-local settings."
+  fi
+}
+
 apply_branch_settings() {
   BRANCH="${NEW_BRANCH}"
   if [[ -n "${NEW_REPO_URL}" ]]; then
@@ -162,6 +168,7 @@ main() {
   parse_args "$@"
   require_root
   load_existing_pull_env
+  require_bootstrap_vars_file
   apply_branch_settings
   write_pull_env
   write_bootstrap_vars
@@ -169,4 +176,6 @@ main() {
   maybe_run_now
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

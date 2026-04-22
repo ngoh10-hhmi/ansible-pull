@@ -29,6 +29,8 @@ That is why this repo is built around `ansible-pull`.
   builds a runtime inventory, and runs Ansible.
 - `scripts/switch-pull-branch.sh`
   Updates the machine so future pull runs follow a different repo branch.
+  It rewrites both `/etc/ansible/pull.env` and `/etc/ansible/bootstrap-vars.yml`
+  so the runtime wrapper and persisted machine-local Ansible vars stay aligned.
 - `playbooks/workstation.yml`
   The main playbook. Today it applies one role: `base`.
 - `roles/base/tasks/main.yml`
@@ -230,6 +232,29 @@ persisted file.
 
 The sibling file `/etc/ansible/pull.env` is written through a shared helper
 that shell-escapes its values before later runtime scripts source it.
+
+## How Branch Switching Works
+
+`switch-pull-branch.sh` is meant for an already bootstrapped machine.
+
+It expects both of these files to already exist:
+
+- `/etc/ansible/pull.env`
+- `/etc/ansible/bootstrap-vars.yml`
+
+When you run it, the script:
+
+1. validates the existing pull settings
+2. refuses to proceed if the persisted bootstrap vars are missing
+3. updates the selected repo URL and branch in both files
+4. preserves unrelated machine-local values in `bootstrap-vars.yml`
+5. optionally runs `/usr/local/sbin/run-ansible-pull` immediately when
+   `--run-now` is requested
+
+Use it when you want a machine to follow a different branch or repo without
+re-running first-time bootstrap. It is not a replacement for bootstrap, and it
+does not regenerate the machine-local identity values that bootstrap originally
+persisted.
 
 ## Why The Repo Is Not Split Into Many Roles
 

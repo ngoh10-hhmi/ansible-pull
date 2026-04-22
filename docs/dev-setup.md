@@ -4,7 +4,7 @@ This repo keeps the local developer workflow intentionally small.
 
 The expected local setup is:
 
-1. use Python 3.11 or newer
+1. use Python 3.12 or newer for the full Ansible toolchain
 2. create a repo-local virtualenv
 3. install the pinned Python tools
 4. install `shellcheck`
@@ -34,6 +34,10 @@ That script:
 - checks for `shellcheck`
 - installs the local `pre-commit` hook
 
+For full local parity with CI and the pinned Ansible toolchain, use Python 3.12
+or newer. Older interpreters may still create a virtualenv, but not every
+Ansible-related check is expected to work there.
+
 ## Manual Setup
 
 If you prefer to do the steps yourself:
@@ -47,15 +51,14 @@ brew install shellcheck
 PRE_COMMIT_HOME=.pre-commit-cache pre-commit install
 ```
 
-If `python3.11` is not installed but your default `python3` is already 3.11 or
+If `python3.11` is not installed but your default `python3` is already 3.12 or
 newer, use that instead.
 
-## Why Python 3.11
+## Why Python 3.12
 
-The pinned toolchain in `requirements-ci.txt` currently expects Python 3.11 or
-newer. Python 3.11 remains the default recommendation because it is widely
-available across developer machines and CI, but newer Python 3 releases also
-work when the pinned toolchain supports them.
+The pinned toolchain in `requirements-ci.txt` currently expects Python 3.12 or
+newer for the full Ansible workflow. CI exercises Python 3.12 and 3.14 so the
+supported path stays explicit and tested.
 
 On macOS, the system `python3` may still be 3.9, which is too old for the
 pinned `ansible-core` version used here.
