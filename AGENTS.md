@@ -159,6 +159,9 @@ Recommended Git workflow:
 - Keep active changes in a `testing` worktree.
 - Keep a separate clean `main` worktree for reference and merge comparison.
 - Use temporary feature worktrees only for isolated or risky changes.
+- When the user says `git yeet`, interpret that as: commit the relevant local
+  changes and push them to the current branch's upstream if a push is the next
+  obvious Git step.
 
 ## Invariants and gotchas
 
