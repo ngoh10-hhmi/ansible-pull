@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+VALID_SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
 def run_bash(script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -39,7 +40,7 @@ def switch_fixture_assignments(tmp_path: Path) -> str:
     )
 
 
-def create_git_repo(path: Path) -> None:
+def create_git_repo(path: Path) -> str:
     path.mkdir()
     run("git", "init", "--quiet", "-b", "main", cwd=path)
     run("git", "config", "user.name", "Switch Test", cwd=path)
@@ -47,6 +48,7 @@ def create_git_repo(path: Path) -> None:
     (path / "README.md").write_text("test repo\n", encoding="utf-8")
     run("git", "add", "README.md", cwd=path)
     run("git", "commit", "--quiet", "-m", "Initial commit", cwd=path)
+    return run("git", "rev-parse", "HEAD", cwd=path).stdout.strip()
 
 
 def test_require_bootstrap_vars_file_fails_when_missing(tmp_path: Path) -> None:
@@ -79,6 +81,36 @@ def test_validate_target_branch_accepts_existing_branch(tmp_path: Path) -> None:
             ]
         )
     )
+
+
+def test_parse_args_rejects_branch_and_commit_together() -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                f"parse_args --branch main --commit {VALID_SHA}",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Use either --branch or --commit, not both." in result.stderr
+
+
+def test_parse_args_rejects_short_commit_pin() -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                "parse_args --commit abc123",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Commit pin must be a full 40-character SHA." in result.stderr
 
 
 def test_invalid_target_branch_leaves_state_untouched(tmp_path: Path) -> None:
@@ -129,6 +161,114 @@ def test_invalid_target_branch_leaves_state_untouched(tmp_path: Path) -> None:
     assert "Could not find branch 'missing-branch'" in result.stderr
     assert env_file.read_text(encoding="utf-8").splitlines()[1] == 'BRANCH="main"'
     assert bootstrap_vars_file.read_text(encoding="utf-8") == bootstrap_vars_text
+
+
+def test_unreachable_commit_pin_leaves_state_untouched(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    create_git_repo(repo_dir)
+    missing_sha = "f" * 40
+    env_file = tmp_path / "pull.env"
+    bootstrap_vars_file = tmp_path / "bootstrap-vars.yml"
+    env_file.write_text(
+        "\n".join(
+            [
+                f"REPO_URL={shlex.quote(str(repo_dir))}",
+                'BRANCH="main"',
+                'PLAYBOOK="playbooks/workstation.yml"',
+                'DEST="/var/lib/ansible-pull"',
+                'LOG_DIR="/var/log/ansible-pull"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    bootstrap_vars_text = textwrap.dedent(
+        f"""\
+        base_ansible_pull_repo_url: "{repo_dir}"
+        base_ansible_pull_branch: "main"
+        base_ansible_pull_playbook: "playbooks/workstation.yml"
+        base_ansible_pull_directory: "/var/lib/ansible-pull"
+        base_ansible_pull_log_dir: "/var/log/ansible-pull"
+        target_hostname: "ws-01"
+        machine_type: "laptop"
+        base_ad_enroll: true
+        """
+    )
+    bootstrap_vars_file.write_text(bootstrap_vars_text, encoding="utf-8")
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                switch_fixture_assignments(tmp_path),
+                "require_root() { :; }",
+                f"main --commit {missing_sha}",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Could not fetch commit" in result.stderr
+    assert env_file.read_text(encoding="utf-8").splitlines()[1] == 'BRANCH="main"'
+    assert bootstrap_vars_file.read_text(encoding="utf-8") == bootstrap_vars_text
+
+
+def test_commit_pin_updates_pull_env_and_bootstrap_vars(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    commit_sha = create_git_repo(repo_dir)
+    env_file = tmp_path / "pull.env"
+    bootstrap_vars_file = tmp_path / "bootstrap-vars.yml"
+    env_file.write_text(
+        "\n".join(
+            [
+                f"REPO_URL={shlex.quote(str(repo_dir))}",
+                'BRANCH="main"',
+                'PLAYBOOK="playbooks/workstation.yml"',
+                'DEST="/var/lib/ansible-pull"',
+                'LOG_DIR="/var/log/ansible-pull"',
+                'SLACK_WEBHOOK_URL="https://hooks.slack.invalid/services/T000/B000/XYZ"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    bootstrap_vars_file.write_text(
+        textwrap.dedent(
+            f"""\
+            base_ansible_pull_repo_url: "{repo_dir}"
+            base_ansible_pull_branch: "main"
+            base_ansible_pull_playbook: "playbooks/workstation.yml"
+            base_ansible_pull_directory: "/var/lib/ansible-pull"
+            base_ansible_pull_log_dir: "/var/log/ansible-pull"
+            target_hostname: "ws-01"
+            machine_type: "laptop"
+            base_ad_enroll: true
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                switch_fixture_assignments(tmp_path),
+                "require_root() { :; }",
+                f"main --commit {commit_sha}",
+            ]
+        )
+    )
+
+    assert f"BRANCH={commit_sha}" in env_file.read_text(encoding="utf-8")
+    assert (
+        f'base_ansible_pull_branch: "{commit_sha}"'
+        in bootstrap_vars_file.read_text(encoding="utf-8")
+    )
+    assert (
+        "SLACK_WEBHOOK_URL=https://hooks.slack.invalid/services/T000/B000/XYZ"
+        in env_file.read_text(encoding="utf-8")
+    )
 
 
 def test_write_bootstrap_vars_preserves_existing_machine_local_keys(tmp_path: Path) -> None:

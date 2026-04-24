@@ -6,4 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list
-RuntimeMaxSec=10m
+TimeoutStartSec=10m

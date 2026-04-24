@@ -7,6 +7,7 @@ import textwrap
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+VALID_SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
 def run_bash(script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -68,6 +69,97 @@ def test_configure_git_credentials_rejects_missing_token_file(tmp_path: Path) ->
 
     assert result.returncode != 0
     assert f"Token file does not exist: {missing_file}" in result.stderr
+
+
+def test_normalize_pull_ref_args_rejects_branch_and_commit_together() -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                'BRANCH_PROVIDED="true"',
+                f"COMMIT={VALID_SHA}",
+                "normalize_pull_ref_args",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Use either --branch or --commit, not both." in result.stderr
+
+
+def test_normalize_pull_ref_args_rejects_short_commit_pin() -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                'COMMIT="abc123"',
+                "normalize_pull_ref_args",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Commit pin must be a full 40-character SHA." in result.stderr
+
+
+def test_commit_pin_is_persisted_as_pull_branch(tmp_path: Path) -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                bootstrap_fixture_assignments(tmp_path),
+                f"COMMIT={VALID_SHA}",
+                "normalize_pull_ref_args",
+                "write_bootstrap_vars_initial_state",
+                'cat "${BOOTSTRAP_VARS_FILE}"',
+            ]
+        )
+    )
+
+    assert f'base_ansible_pull_branch: "{VALID_SHA}"' in result.stdout
+
+
+def test_sync_repository_checkout_supports_fresh_commit_pin(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    checkout_dir = tmp_path / "checkout"
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            repo_dir={shlex.quote(str(repo_dir))}
+            checkout_dir={shlex.quote(str(checkout_dir))}
+            mkdir -p "$repo_dir"
+            git init --quiet -b main "$repo_dir"
+            git -C "$repo_dir" config user.name "Bootstrap Test"
+            git -C "$repo_dir" config user.email "bootstrap-test@example.com"
+            printf 'test repo\\n' > "$repo_dir/README.md"
+            git -C "$repo_dir" add README.md
+            git -C "$repo_dir" commit --quiet -m "Initial commit"
+            commit_sha="$(git -C "$repo_dir" rev-parse HEAD)"
+
+            source scripts/bootstrap-ubuntu.sh
+            REPO_URL="$repo_dir"
+            DEST="$checkout_dir"
+            COMMIT="$commit_sha"
+            normalize_pull_ref_args
+            sync_repository_checkout
+            if git -C "$DEST" symbolic-ref --quiet HEAD; then
+              exit 1
+            fi
+            git -C "$DEST" rev-parse HEAD
+            """
+        )
+    )
+    head_sha = result.stdout.strip().splitlines()[-1]
+    expected_sha = subprocess.run(
+        ["git", "-C", str(repo_dir), "rev-parse", "HEAD"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+
+    assert head_sha == expected_sha
 
 
 def test_write_bootstrap_vars_initial_state_omits_bootstrap_only_keys(tmp_path: Path) -> None:

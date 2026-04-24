@@ -246,16 +246,19 @@ When you run it, the script:
 
 1. validates the existing pull settings
 2. refuses to proceed if the persisted bootstrap vars are missing
-3. validates that the requested branch exists in the selected repo
-4. updates the selected repo URL and branch in both files
+3. validates that the requested branch or full commit SHA exists in the
+   selected repo
+4. updates the selected repo URL and pull ref in both files
 5. preserves unrelated machine-local values in `bootstrap-vars.yml`
 6. optionally runs `/usr/local/sbin/run-ansible-pull` immediately when
    `--run-now` is requested
 
-Use it when you want a machine to follow a different branch or repo without
-re-running first-time bootstrap. It is not a replacement for bootstrap, and it
-does not regenerate the machine-local identity values that bootstrap originally
-persisted.
+Use it when you want a machine to follow a different branch, pin to a specific
+commit, or use another repo without re-running first-time bootstrap. Commit
+pins are stored in the same `BRANCH` setting as branch names, and the runtime
+wrapper treats that value as the ref to fetch and checkout. It is not a
+replacement for bootstrap, and it does not regenerate the machine-local
+identity values that bootstrap originally persisted.
 
 ## Why The Repo Is Not Split Into Many Roles
 

@@ -76,13 +76,14 @@ Notes:
 
 Notes:
 
-- Bootstrap writes the repo, branch, playbook, directory, and log values into
+- Bootstrap writes the repo, pull ref, playbook, directory, and log values into
   `/etc/ansible/bootstrap-vars.yml` so the machine keeps using the same pull
-  settings on later runs.
+  settings on later runs. The pull ref is usually a branch name, but it can be
+  a full commit SHA for rollback or pinning.
 - The runtime copy in `/etc/ansible/pull.env` is written through a shared
   helper that shell-escapes values before runtime scripts source them.
 - `switch-pull-branch.sh` updates these persisted values when you change a
-  machine from `main` to `testing` or back.
+  machine from `main` to `testing`, switch back, or pin to a commit SHA.
 
 ## APT Refresh And Upgrade Policy Variables
 

@@ -171,6 +171,7 @@ def test_ansible_pull_service_logs_to_journal_with_identifier() -> None:
     service = host.file("/etc/systemd/system/ansible-pull.service")
     assert service.exists
     assert service.contains("SyslogIdentifier=ansible-pull")
+    assert service.contains("TimeoutStartSec=30m")
 
 
 def test_apt_refresh_timer_is_installed() -> None:
@@ -182,6 +183,7 @@ def test_apt_refresh_timer_is_installed() -> None:
     assert timer.contains("RandomizedDelaySec=0")
     assert service.exists
     assert service.contains("ExecStart=/usr/local/sbin/apt-refresh")
+    assert service.contains("TimeoutStartSec=10m")
     assert host.run("systemctl is-enabled apt-refresh.timer").stdout.strip() == "enabled"
 
 
@@ -204,10 +206,12 @@ def test_managed_package_updates_timer_is_installed() -> None:
 
     assert timer.exists
     assert "OnCalendar=*-*-* 03:00:00" in timer.content_string
+    assert timer.contains("RandomizedDelaySec=15m")
     assert service.exists
     assert service.contains(
         "ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list"
     )
+    assert service.contains("TimeoutStartSec=30m")
     assert package_list.exists
     assert package_list.contains("^ca-certificates$")
     assert package_list.contains("^vim$")
@@ -222,10 +226,12 @@ def test_browser_package_updates_timer_is_installed() -> None:
 
     assert timer.exists
     assert "OnCalendar=*-*-* 04:00:00" in timer.content_string
+    assert timer.contains("RandomizedDelaySec=15m")
     assert service.exists
     assert service.contains(
         "ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list"
     )
+    assert service.contains("TimeoutStartSec=10m")
     assert package_list.exists
     assert package_list.contains("^google-chrome-stable$")
     assert package_list.contains("^firefox$")

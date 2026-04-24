@@ -48,6 +48,7 @@ die() {
 # Default bootstrap configuration and optional credential inputs.
 REPO_URL=""
 BRANCH="main"
+BRANCH_PROVIDED="false"
 COMMIT=""
 PLAYBOOK="playbooks/workstation.yml"
 DEST="/var/lib/ansible-pull"
@@ -75,38 +76,48 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --repo)
+        [[ -n "${2:-}" ]] || die "--repo requires a value."
         REPO_URL="${2:-}"
         shift 2
         ;;
       --branch)
+        [[ -n "${2:-}" ]] || die "--branch requires a value."
         BRANCH="${2:-}"
+        BRANCH_PROVIDED="true"
         shift 2
         ;;
       --commit)
+        [[ -n "${2:-}" ]] || die "--commit requires a value."
         COMMIT="${2:-}"
         shift 2
         ;;
       --playbook)
+        [[ -n "${2:-}" ]] || die "--playbook requires a value."
         PLAYBOOK="${2:-}"
         shift 2
         ;;
       --github-user)
+        [[ -n "${2:-}" ]] || die "--github-user requires a value."
         GITHUB_USER="${2:-}"
         shift 2
         ;;
       --github-token)
+        [[ -n "${2:-}" ]] || die "--github-token requires a value."
         GITHUB_TOKEN="${2:-}"
         shift 2
         ;;
       --github-token-file)
+        [[ -n "${2:-}" ]] || die "--github-token-file requires a value."
         GITHUB_TOKEN_FILE="${2:-}"
         shift 2
         ;;
       --slack-webhook)
+        [[ -n "${2:-}" ]] || die "--slack-webhook requires a value."
         SLACK_WEBHOOK_URL="${2:-}"
         shift 2
         ;;
       --slack-notify-success)
+        [[ -n "${2:-}" ]] || die "--slack-notify-success requires a value."
         SLACK_NOTIFY_SUCCESS="${2:-}"
         shift 2
         ;;
@@ -123,8 +134,32 @@ parse_args() {
   done
 }
 
+is_valid_commit_sha() {
+  local ref="${1:-}"
+
+  [[ "${ref}" =~ ^[0-9A-Fa-f]{40}$ ]]
+}
+
+normalize_pull_ref_args() {
+  if [[ "${BRANCH_PROVIDED}" == "true" && -n "${COMMIT}" ]]; then
+    die "Use either --branch or --commit, not both."
+  fi
+
+  if [[ -n "${COMMIT}" ]]; then
+    if ! is_valid_commit_sha "${COMMIT}"; then
+      die "Commit pin must be a full 40-character SHA."
+    fi
+
+    # BRANCH is the persisted ansible-pull ref, so a commit pin is stored here
+    # for /etc/ansible/pull.env and bootstrap-vars.yml.
+    BRANCH="${COMMIT}"
+  fi
+}
+
 # Validate execution context (root, required args, and Ubuntu OS).
 validate_prerequisites() {
+  normalize_pull_ref_args
+
   if [[ "${EUID}" -ne 0 ]]; then
     die "Run this script with sudo or as root."
   fi
@@ -222,6 +257,40 @@ source_checkout_libs() {
   BOOTSTRAP_LIBS_LOADED="true"
 }
 
+bootstrap_fetch_branch_ref() {
+  local repo_dir="$1"
+  local ref="$2"
+  local clone_depth="${3:-}"
+  local fetch_args=(--prune origin)
+
+  if [[ -n "${clone_depth}" ]]; then
+    fetch_args+=(--depth "${clone_depth}")
+  fi
+
+  fetch_args+=("+refs/heads/${ref}:refs/remotes/origin/${ref}")
+  git -C "${repo_dir}" fetch "${fetch_args[@]}"
+}
+
+bootstrap_fetch_commit_ref() {
+  local repo_dir="$1"
+  local ref="$2"
+  local clone_depth="${3:-}"
+  local fetch_args=(--prune origin)
+
+  if [[ -n "${clone_depth}" ]]; then
+    fetch_args+=(--depth "${clone_depth}")
+  fi
+
+  fetch_args+=("${ref}")
+  if git -C "${repo_dir}" fetch "${fetch_args[@]}"; then
+    return 0
+  fi
+
+  git -C "${repo_dir}" fetch --prune origin \
+    "+refs/heads/*:refs/remotes/origin/*" \
+    "+refs/tags/*:refs/tags/*"
+}
+
 # Ensure a local checkout exists and is synced to the requested branch or commit.
 sync_repository_checkout() {
   local ref="${BRANCH}"
@@ -244,11 +313,12 @@ sync_repository_checkout() {
     else
       git -C "${DEST}" remote add origin "${REPO_URL}"
     fi
-    git -C "${DEST}" fetch --prune origin "${ref}"
     if [[ -n "${COMMIT}" ]]; then
-      git -C "${DEST}" checkout "${ref}"
+      bootstrap_fetch_commit_ref "${DEST}" "${ref}"
+      git -C "${DEST}" checkout --detach "${ref}"
       git -C "${DEST}" reset --hard "${ref}"
     else
+      bootstrap_fetch_branch_ref "${DEST}" "${ref}"
       git -C "${DEST}" checkout -B "${ref}" "origin/${ref}"
       git -C "${DEST}" reset --hard "origin/${ref}"
     fi
@@ -258,11 +328,14 @@ sync_repository_checkout() {
     # --depth 1 fetches only the latest commit so the initial clone is fast
     # and uses minimal disk space. The installed runtime wrapper uses the
     # shared git sync helper after bootstrap completes.
-    git clone --depth 1 --branch "${ref}" "${REPO_URL}" "${DEST}"
-    # When bootstrapping with --commit, the clone lands on a detached HEAD.
-    # Reset to the exact commit so future syncs have a stable starting point.
     if [[ -n "${COMMIT}" ]]; then
+      git init --quiet "${DEST}"
+      git -C "${DEST}" remote add origin "${REPO_URL}"
+      bootstrap_fetch_commit_ref "${DEST}" "${ref}" "1"
+      git -C "${DEST}" checkout --detach "${ref}"
       git -C "${DEST}" reset --hard "${ref}"
+    else
+      git clone --depth 1 --branch "${ref}" "${REPO_URL}" "${DEST}"
     fi
   fi
 }

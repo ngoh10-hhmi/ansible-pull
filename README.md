@@ -139,6 +139,14 @@ sudo /usr/local/sbin/switch-pull-branch --branch testing --run-now
 sudo /usr/local/sbin/switch-pull-branch --branch main --run-now
 ```
 
+To temporarily pin a machine to a specific commit, use the full 40-character
+SHA. The script validates that the SHA can be fetched before rewriting
+machine-local pull state:
+
+```bash
+sudo /usr/local/sbin/switch-pull-branch --commit 0123456789abcdef0123456789abcdef01234567 --run-now
+```
+
 ## Run On Demand
 
 To run `ansible-pull` immediately on a managed workstation:

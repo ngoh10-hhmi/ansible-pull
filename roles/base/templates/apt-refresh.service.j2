@@ -6,4 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/apt-refresh
-RuntimeMaxSec=10m
+TimeoutStartSec=10m

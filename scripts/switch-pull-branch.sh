@@ -37,6 +37,13 @@ source_script_lib() {
 }
 
 source_script_lib "envfile.sh"
+source_script_lib "git_sync.sh"
+
+is_valid_commit_sha() {
+  local ref="${1:-}"
+
+  [[ "${ref}" =~ ^[0-9A-Fa-f]{40}$ ]]
+}
 
 usage() {
   cat <<'EOF'
@@ -56,14 +63,17 @@ parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --branch)
+        [[ -n "${2:-}" ]] || die "--branch requires a value."
         NEW_BRANCH="${2:-}"
         shift 2
         ;;
       --commit)
+        [[ -n "${2:-}" ]] || die "--commit requires a value."
         NEW_COMMIT="${2:-}"
         shift 2
         ;;
       --repo)
+        [[ -n "${2:-}" ]] || die "--repo requires a value."
         NEW_REPO_URL="${2:-}"
         shift 2
         ;;
@@ -81,9 +91,16 @@ parse_args() {
     esac
   done
 
-  if [[ -z "${NEW_BRANCH}" && -z "${NEW_COMMIT}" ]]; then
+  if [[ -n "${NEW_BRANCH}" && -n "${NEW_COMMIT}" ]]; then
+    usage
+    die "Use either --branch or --commit, not both."
+  elif [[ -z "${NEW_BRANCH}" && -z "${NEW_COMMIT}" ]]; then
     usage
     die "Either --branch or --commit is required."
+  fi
+
+  if [[ -n "${NEW_COMMIT}" ]] && ! is_valid_commit_sha "${NEW_COMMIT}"; then
+    die "Commit pin must be a full 40-character SHA."
   fi
 }
 
@@ -96,13 +113,6 @@ require_root() {
 load_existing_pull_env() {
   load_env_file "${ENV_FILE}" || die "Missing ${ENV_FILE}. Run bootstrap first."
   validate_pull_env || die "Invalid ${ENV_FILE}. Fix it before switching branches."
-  # When switching to a commit pin, BRANCH holds the SHA temporarily so the
-  # shared env-file helper can persist it. The wrapper script does not
-  # distinguish between branch names and commit SHAs — it just fetches and
-  # checks out whichever ref is stored here.
-  if [[ -n "${NEW_COMMIT}" && -n "${BRANCH}" ]]; then
-    BRANCH="${NEW_COMMIT}"
-  fi
 }
 
 require_bootstrap_vars_file() {
@@ -112,26 +122,46 @@ require_bootstrap_vars_file() {
 }
 
 apply_branch_settings() {
-  BRANCH="${NEW_BRANCH}"
+  if [[ -n "${NEW_COMMIT}" ]]; then
+    BRANCH="${NEW_COMMIT}"
+  else
+    BRANCH="${NEW_BRANCH}"
+  fi
+
   if [[ -n "${NEW_REPO_URL}" ]]; then
     REPO_URL="${NEW_REPO_URL}"
   fi
 }
 
 validate_target_branch() {
-  # Commit pins cannot be validated before pushing (the commit may not exist
-  # in the remote yet). Branch switches are validated upfront to prevent
-  # persisting a branch that the next scheduled run cannot fetch.
-  if [[ -n "${NEW_COMMIT}" ]]; then
-    return 0
-  fi
-
   if ! command -v git >/dev/null 2>&1; then
-    die "git is required to validate the target branch."
+    die "git is required to validate the target ref."
   fi
 
-  if ! git ls-remote --exit-code --heads "${REPO_URL}" "${BRANCH}" >/dev/null 2>&1; then
-    die "Could not find branch '${BRANCH}' in repo '${REPO_URL}'. Refusing to update ansible-pull settings."
+  if [[ -n "${NEW_COMMIT}" ]]; then
+    local tmp_dir
+    tmp_dir="$(mktemp -d)"
+
+    if (
+      git init --quiet "${tmp_dir}"
+      git -C "${tmp_dir}" remote add origin "${REPO_URL}"
+      git_fetch_commit_ref "${tmp_dir}" "${NEW_COMMIT}" "1"
+      git -C "${tmp_dir}" cat-file -e "${NEW_COMMIT}^{commit}"
+    ); then
+      rm -rf "${tmp_dir}"
+      return 0
+    fi
+
+    rm -rf "${tmp_dir}"
+    die "Could not fetch commit '${NEW_COMMIT}' from repo '${REPO_URL}'. Refusing to update ansible-pull settings."
+  else
+    # Branch switches are validated upfront to avoid persisting a branch that
+    # the next scheduled run cannot fetch.
+    if ! git ls-remote --exit-code --heads "${REPO_URL}" "${BRANCH}" >/dev/null 2>&1; then
+      die "Could not find branch '${BRANCH}' in repo '${REPO_URL}'. Refusing to update ansible-pull settings."
+    fi
+
+    return 0
   fi
 }
 
@@ -191,7 +221,7 @@ maybe_run_now() {
     echo "Running ansible-pull immediately..."
     /usr/local/sbin/run-ansible-pull
   else
-    echo "No immediate run requested. Timer/manual runs will now use branch '${BRANCH}'."
+    echo "No immediate run requested. Timer/manual runs will now use ref '${BRANCH}'."
   fi
 }
 
