@@ -163,6 +163,50 @@ Recommended Git workflow:
   changes and push them to the current branch's upstream if a push is the next
   obvious Git step.
 
+## Rollback and pin-to-commit
+
+When a `testing` or `main` push breaks workstations, there are two recovery
+paths:
+
+**1. Switch back to the previous branch**
+
+```bash
+sudo /usr/local/sbin/switch-pull-branch --branch main --run-now
+```
+
+This reverts all workstations to the last known-good branch. The downside is
+that any unmerged changes in `testing` are left behind.
+
+**2. Pin to a specific commit**
+
+```bash
+sudo /usr/local/sbin/switch-pull-branch --commit <sha> --run-now
+```
+
+Pinning to a commit SHA is useful when you want to:
+- Roll back to a known-good commit on a branch that has since regressed
+- Temporarily freeze a workstation on a specific commit while debugging
+- Deploy a specific fix without merging it into a release branch
+
+The commit SHA is stored in `/etc/ansible/pull.env` and
+`/etc/ansible/bootstrap-vars.yml` under `BRANCH`, so the ansible-pull
+wrapper treats it as a ref to fetch and checkout. Future scheduled runs stay
+on that commit until an operator switches the branch back.
+
+**3. Bootstrap with a commit pin**
+
+For new machines or re-imaged workstations, use `--commit` during bootstrap
+instead of `--branch`:
+
+```bash
+sudo /tmp/bootstrap-ubuntu.sh \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
+  --commit 0123456789abcdef0123456789abcdef01234567
+```
+
+When a commit is pinned, the checkout uses a detached HEAD and the sync helper
+resets to that exact SHA on every run, so it never drifts forward.
+
 ## Invariants and gotchas
 
 - Treat `/var/lib/ansible-pull` as disposable runtime state. Pull runs do `git reset --hard` and `git clean -fdx`.

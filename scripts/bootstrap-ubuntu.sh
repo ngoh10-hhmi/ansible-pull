@@ -5,7 +5,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  bootstrap-ubuntu.sh --repo <repo-url> [--branch <branch>] [--playbook <path>]
+  bootstrap-ubuntu.sh --repo <repo-url> [--branch <branch>] [--commit <sha>] [--playbook <path>]
                       [--github-user <username>]
                       [--github-token <token> | --github-token-file <path>]
                       [--slack-webhook <url>] [--slack-notify-success <true|false>]
@@ -14,6 +14,11 @@ Example:
   sudo ./bootstrap-ubuntu.sh \
     --repo https://github.com/example/ansible-pull.git \
     --branch main
+
+Pin to a specific commit (useful for rollback):
+  sudo ./bootstrap-ubuntu.sh \
+    --repo https://github.com/example/ansible-pull.git \
+    --commit 0123456789abcdef0123456789abcdef01234567
 
 Private repo later:
   sudo ./bootstrap-ubuntu.sh \
@@ -43,6 +48,7 @@ die() {
 # Default bootstrap configuration and optional credential inputs.
 REPO_URL=""
 BRANCH="main"
+COMMIT=""
 PLAYBOOK="playbooks/workstation.yml"
 DEST="/var/lib/ansible-pull"
 LOG_DIR="/var/log/ansible-pull"
@@ -74,6 +80,10 @@ parse_args() {
         ;;
       --branch)
         BRANCH="${2:-}"
+        shift 2
+        ;;
+      --commit)
+        COMMIT="${2:-}"
         shift 2
         ;;
       --playbook)
@@ -212,14 +222,19 @@ source_checkout_libs() {
   BOOTSTRAP_LIBS_LOADED="true"
 }
 
-# Ensure a local checkout exists and is synced to the requested branch.
+# Ensure a local checkout exists and is synced to the requested branch or commit.
 sync_repository_checkout() {
+  local ref="${BRANCH}"
+  if [[ -n "${COMMIT}" ]]; then
+    ref="${COMMIT}"
+  fi
+
   if [[ -f "${DEST}/scripts/lib/git_sync.sh" ]]; then
     source_checkout_libs
     # The first bootstrap on a brand-new machine is often run from a single
     # downloaded bootstrap script, so this shared helper is only available
     # once a checkout already exists.
-    sync_checkout_or_clone "${DEST}" "${REPO_URL}" "${BRANCH}" "1"
+    sync_checkout_or_clone "${DEST}" "${REPO_URL}" "${ref}" "1"
     return
   fi
 
@@ -229,16 +244,26 @@ sync_repository_checkout() {
     else
       git -C "${DEST}" remote add origin "${REPO_URL}"
     fi
-    git -C "${DEST}" fetch --prune origin "${BRANCH}"
-    git -C "${DEST}" checkout -B "${BRANCH}" "origin/${BRANCH}"
-    git -C "${DEST}" reset --hard "origin/${BRANCH}"
+    git -C "${DEST}" fetch --prune origin "${ref}"
+    if [[ -n "${COMMIT}" ]]; then
+      git -C "${DEST}" checkout "${ref}"
+      git -C "${DEST}" reset --hard "${ref}"
+    else
+      git -C "${DEST}" checkout -B "${ref}" "origin/${ref}"
+      git -C "${DEST}" reset --hard "origin/${ref}"
+    fi
     git -C "${DEST}" clean -fdx
   else
     rm -rf "${DEST}"
     # --depth 1 fetches only the latest commit so the initial clone is fast
     # and uses minimal disk space. The installed runtime wrapper uses the
     # shared git sync helper after bootstrap completes.
-    git clone --depth 1 --branch "${BRANCH}" "${REPO_URL}" "${DEST}"
+    git clone --depth 1 --branch "${ref}" "${REPO_URL}" "${DEST}"
+    # When bootstrapping with --commit, the clone lands on a detached HEAD.
+    # Reset to the exact commit so future syncs have a stable starting point.
+    if [[ -n "${COMMIT}" ]]; then
+      git -C "${DEST}" reset --hard "${ref}"
+    fi
   fi
 }
 

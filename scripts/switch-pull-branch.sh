@@ -12,6 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
 
 NEW_BRANCH=""
+NEW_COMMIT=""
 NEW_REPO_URL=""
 RUN_NOW="false"
 
@@ -41,10 +42,12 @@ usage() {
   cat <<'EOF'
 Usage:
   switch-pull-branch.sh --branch <branch> [--repo <repo-url>] [--run-now]
+  switch-pull-branch.sh --commit <sha> [--repo <repo-url>] [--run-now]
 
 Examples:
   sudo switch-pull-branch.sh --branch testing
   sudo switch-pull-branch.sh --branch main
+  sudo switch-pull-branch.sh --commit 0123456789abcdef0123456789abcdef01234567
   sudo switch-pull-branch.sh --branch testing --run-now
 EOF
 }
@@ -54,6 +57,10 @@ parse_args() {
     case "$1" in
       --branch)
         NEW_BRANCH="${2:-}"
+        shift 2
+        ;;
+      --commit)
+        NEW_COMMIT="${2:-}"
         shift 2
         ;;
       --repo)
@@ -74,9 +81,9 @@ parse_args() {
     esac
   done
 
-  if [[ -z "${NEW_BRANCH}" ]]; then
+  if [[ -z "${NEW_BRANCH}" && -z "${NEW_COMMIT}" ]]; then
     usage
-    die "--branch is required."
+    die "Either --branch or --commit is required."
   fi
 }
 
@@ -89,6 +96,13 @@ require_root() {
 load_existing_pull_env() {
   load_env_file "${ENV_FILE}" || die "Missing ${ENV_FILE}. Run bootstrap first."
   validate_pull_env || die "Invalid ${ENV_FILE}. Fix it before switching branches."
+  # When switching to a commit pin, BRANCH holds the SHA temporarily so the
+  # shared env-file helper can persist it. The wrapper script does not
+  # distinguish between branch names and commit SHAs — it just fetches and
+  # checks out whichever ref is stored here.
+  if [[ -n "${NEW_COMMIT}" && -n "${BRANCH}" ]]; then
+    BRANCH="${NEW_COMMIT}"
+  fi
 }
 
 require_bootstrap_vars_file() {
@@ -105,6 +119,13 @@ apply_branch_settings() {
 }
 
 validate_target_branch() {
+  # Commit pins cannot be validated before pushing (the commit may not exist
+  # in the remote yet). Branch switches are validated upfront to prevent
+  # persisting a branch that the next scheduled run cannot fetch.
+  if [[ -n "${NEW_COMMIT}" ]]; then
+    return 0
+  fi
+
   if ! command -v git >/dev/null 2>&1; then
     die "git is required to validate the target branch."
   fi
