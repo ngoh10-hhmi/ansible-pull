@@ -287,9 +287,9 @@ pre-commit install
 Notes:
 
 - `pre-commit` runs locally. It does not upload anything to GitHub by itself.
-- The pinned toolchain currently expects Python 3.11 or newer. If your default
-  `python3` is older, use `python3.11` when creating the virtualenv. If your
-  default `python3` is already 3.11 or newer, `./scripts/setup-dev.sh` will use
+- The pinned toolchain currently expects Python 3.12 or newer. If your default
+  `python3` is older, use `python3.12` when creating the virtualenv. If your
+  default `python3` is already 3.12 or newer, `./scripts/setup-dev.sh` will use
   that.
 - In this repo, the configured hooks use system-installed tools, so
   `shellcheck` must also be available on the machine.

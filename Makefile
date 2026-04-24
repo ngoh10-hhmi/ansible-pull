@@ -1,4 +1,4 @@
-PYTHON ?= python3.11
+PYTHON ?= python3.12
 VENV ?= .venv
 ACTIVATE = . $(VENV)/bin/activate
 
@@ -17,7 +17,7 @@ lint: guard-venv
 	PRE_COMMIT_HOME=.pre-commit-cache $(ACTIVATE) && pre-commit run --all-files
 
 unit-test: guard-venv
-	$(ACTIVATE) && python -m pytest -q tests/test_run_ansible_pull.py tests/test_bootstrap_ubuntu.py tests/test_switch_pull_branch.py
+	$(ACTIVATE) && python -m pytest -q tests/test_*.py
 
 test:
 	$(MAKE) lint

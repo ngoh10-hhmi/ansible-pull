@@ -28,8 +28,9 @@ If you already have the repo cloned, run this from the repo root:
 
 That script:
 
-- prefers `python3.11` when it is installed
-- otherwise uses `python3` when it is Python 3.11 or newer
+- prefers `python3.12` when it is installed
+- otherwise uses `python3.13`, `python3.14`, or `python3` when available and
+  Python 3.12 or newer
 - installs the pinned toolchain from `requirements-dev.txt`
 - checks for `shellcheck`
 - installs the local `pre-commit` hook
@@ -43,7 +44,7 @@ Ansible-related check is expected to work there.
 If you prefer to do the steps yourself:
 
 ```bash
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 python -m pip install -r requirements-dev.txt
@@ -51,7 +52,7 @@ brew install shellcheck
 PRE_COMMIT_HOME=.pre-commit-cache pre-commit install
 ```
 
-If `python3.11` is not installed but your default `python3` is already 3.12 or
+If `python3.12` is not installed but your default `python3` is already 3.12 or
 newer, use that instead.
 
 ## Why Python 3.12

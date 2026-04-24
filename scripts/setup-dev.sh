@@ -11,22 +11,22 @@ die() {
 }
 
 pick_python() {
-  if command -v python3.11 >/dev/null 2>&1; then
-    PYTHON_BIN="$(command -v python3.11)"
-    return
-  fi
+  local candidate version major minor
 
-  if command -v python3 >/dev/null 2>&1; then
-    local version major minor
-    version="$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  for candidate in python3.12 python3.13 python3.14 python3; do
+    if ! command -v "${candidate}" >/dev/null 2>&1; then
+      continue
+    fi
+
+    version="$("${candidate}" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
     IFS=. read -r major minor <<<"${version}"
-    if [[ "${major}" -eq 3 && "${minor}" -ge 11 ]]; then
-      PYTHON_BIN="$(command -v python3)"
+    if [[ "${major}" -eq 3 && "${minor}" -ge 12 ]]; then
+      PYTHON_BIN="$(command -v "${candidate}")"
       return
     fi
-  fi
+  done
 
-  die "Python 3.11 or newer is required. Install Python 3.11+ and rerun this script."
+  die "Python 3.12 or newer is required. Install Python 3.12+ and rerun this script."
 }
 
 check_shellcheck() {
@@ -69,4 +69,6 @@ Next commands:
 EOF
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

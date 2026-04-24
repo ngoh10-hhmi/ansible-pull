@@ -104,6 +104,16 @@ apply_branch_settings() {
   fi
 }
 
+validate_target_branch() {
+  if ! command -v git >/dev/null 2>&1; then
+    die "git is required to validate the target branch."
+  fi
+
+  if ! git ls-remote --exit-code --heads "${REPO_URL}" "${BRANCH}" >/dev/null 2>&1; then
+    die "Could not find branch '${BRANCH}' in repo '${REPO_URL}'. Refusing to update ansible-pull settings."
+  fi
+}
+
 write_pull_env() {
   # Keep existing Slack settings intact so future scheduled runs preserve the
   # same failure summaries and optional success notifications.
@@ -170,6 +180,7 @@ main() {
   load_existing_pull_env
   require_bootstrap_vars_file
   apply_branch_settings
+  validate_target_branch
   write_pull_env
   write_bootstrap_vars
   print_summary

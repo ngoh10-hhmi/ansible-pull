@@ -246,9 +246,10 @@ When you run it, the script:
 
 1. validates the existing pull settings
 2. refuses to proceed if the persisted bootstrap vars are missing
-3. updates the selected repo URL and branch in both files
-4. preserves unrelated machine-local values in `bootstrap-vars.yml`
-5. optionally runs `/usr/local/sbin/run-ansible-pull` immediately when
+3. validates that the requested branch exists in the selected repo
+4. updates the selected repo URL and branch in both files
+5. preserves unrelated machine-local values in `bootstrap-vars.yml`
+6. optionally runs `/usr/local/sbin/run-ansible-pull` immediately when
    `--run-now` is requested
 
 Use it when you want a machine to follow a different branch or repo without

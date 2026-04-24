@@ -114,7 +114,7 @@ Open issues:
 - Suspected root cause: new timer assertion is using regex-style matching by mistake.
 
 Environment notes:
-- Local dev setup expects Python 3.11+
+- Local dev setup expects Python 3.12+
 - `shellcheck` must be installed separately
 - Sandboxed `gh` checks may not see keychain-backed auth
 

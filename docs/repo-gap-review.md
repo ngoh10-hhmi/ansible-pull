@@ -121,32 +121,33 @@ Suggested validation:
 - Keep these tests tempdir-based and mock external commands so they stay fast
   and safe on developer machines.
 
-### 5. `switch-pull-branch.sh` updates state before it proves the target is valid
+### 5. `switch-pull-branch.sh` validates the target before rewriting state
 
 Current behavior:
 
-- [`scripts/switch-pull-branch.sh`](../scripts/switch-pull-branch.sh) rewrites
-  `/etc/ansible/pull.env` and `/etc/ansible/bootstrap-vars.yml` immediately.
-- If `--run-now` is omitted, a typo in `--branch` or `--repo` is not caught
-  until a later scheduled run.
+- [`scripts/switch-pull-branch.sh`](../scripts/switch-pull-branch.sh) validates
+  the target branch with `git ls-remote --heads` before rewriting
+  `/etc/ansible/pull.env` or `/etc/ansible/bootstrap-vars.yml`.
+- If the requested branch cannot be found, both persisted files are left
+  untouched.
 
 Why this is a gap:
 
-- Operator mistakes can be persisted into the machine's steady-state runtime
-  config.
-- Recovery is easy, but the failure is delayed and noisier than it needs to be.
+- Network, credential, or remote availability problems can now block branch
+  switching up front.
+- That is intentional: failing before rewrite is safer than persisting a branch
+  that the next scheduled run cannot fetch.
 
-Recommended change:
+Recommended follow-up:
 
-- Validate the requested repo/branch before writing the new state.
-- Fail fast if the remote branch cannot be fetched or does not exist.
-- Keep the current `--run-now` behavior, but make it optional confirmation
-  rather than the only validation path.
+- Keep the validation behavior covered by fast unit tests.
+- If private-repo credential handling changes, retest this path on a real
+  bootstrapped host.
 
 Suggested validation:
 
-- Add one test for a valid branch switch and one for an invalid branch that
-  must leave both persisted files untouched.
+- Keep one test for a valid branch lookup and one for an invalid branch that
+  leaves both persisted files untouched.
 
 ### 6. Targeted package update helpers should stay lock-tolerant
 

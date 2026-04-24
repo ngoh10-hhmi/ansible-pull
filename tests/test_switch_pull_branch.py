@@ -20,6 +20,16 @@ def run_bash(script: str, *, check: bool = True) -> subprocess.CompletedProcess[
     )
 
 
+def run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+
 def switch_fixture_assignments(tmp_path: Path) -> str:
     return "\n".join(
         [
@@ -27,6 +37,16 @@ def switch_fixture_assignments(tmp_path: Path) -> str:
             f'BOOTSTRAP_VARS_FILE={shlex.quote(str(tmp_path / "bootstrap-vars.yml"))}',
         ]
     )
+
+
+def create_git_repo(path: Path) -> None:
+    path.mkdir()
+    run("git", "init", "--quiet", "-b", "main", cwd=path)
+    run("git", "config", "user.name", "Switch Test", cwd=path)
+    run("git", "config", "user.email", "switch-test@example.com", cwd=path)
+    (path / "README.md").write_text("test repo\n", encoding="utf-8")
+    run("git", "add", "README.md", cwd=path)
+    run("git", "commit", "--quiet", "-m", "Initial commit", cwd=path)
 
 
 def test_require_bootstrap_vars_file_fails_when_missing(tmp_path: Path) -> None:
@@ -43,6 +63,72 @@ def test_require_bootstrap_vars_file_fails_when_missing(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert f"Missing {tmp_path / 'bootstrap-vars.yml'}." in result.stderr
+
+
+def test_validate_target_branch_accepts_existing_branch(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    create_git_repo(repo_dir)
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                f"REPO_URL={shlex.quote(str(repo_dir))}",
+                'BRANCH="main"',
+                "validate_target_branch",
+            ]
+        )
+    )
+
+
+def test_invalid_target_branch_leaves_state_untouched(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    create_git_repo(repo_dir)
+    env_file = tmp_path / "pull.env"
+    bootstrap_vars_file = tmp_path / "bootstrap-vars.yml"
+    env_file.write_text(
+        "\n".join(
+            [
+                f"REPO_URL={shlex.quote(str(repo_dir))}",
+                'BRANCH="main"',
+                'PLAYBOOK="playbooks/workstation.yml"',
+                'DEST="/var/lib/ansible-pull"',
+                'LOG_DIR="/var/log/ansible-pull"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    bootstrap_vars_text = textwrap.dedent(
+        f"""\
+        base_ansible_pull_repo_url: "{repo_dir}"
+        base_ansible_pull_branch: "main"
+        base_ansible_pull_playbook: "playbooks/workstation.yml"
+        base_ansible_pull_directory: "/var/lib/ansible-pull"
+        base_ansible_pull_log_dir: "/var/log/ansible-pull"
+        target_hostname: "ws-01"
+        machine_type: "laptop"
+        base_ad_enroll: true
+        """
+    )
+    bootstrap_vars_file.write_text(bootstrap_vars_text, encoding="utf-8")
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/switch-pull-branch.sh",
+                switch_fixture_assignments(tmp_path),
+                "require_root() { :; }",
+                "main --branch missing-branch",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Could not find branch 'missing-branch'" in result.stderr
+    assert env_file.read_text(encoding="utf-8").splitlines()[1] == 'BRANCH="main"'
+    assert bootstrap_vars_file.read_text(encoding="utf-8") == bootstrap_vars_text
 
 
 def test_write_bootstrap_vars_preserves_existing_machine_local_keys(tmp_path: Path) -> None:
