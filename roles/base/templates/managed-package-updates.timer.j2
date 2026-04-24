@@ -3,6 +3,7 @@ Description=Schedule daily managed baseline package upgrades
 
 [Timer]
 OnCalendar={{ base_managed_package_updates_timer_on_calendar }}
+RandomizedDelaySec={{ base_managed_package_updates_randomized_delay_sec }}
 Persistent=true
 
 [Install]

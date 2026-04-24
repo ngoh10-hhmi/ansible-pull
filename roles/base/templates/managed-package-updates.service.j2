@@ -6,3 +6,4 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list
+RuntimeMaxSec=30m

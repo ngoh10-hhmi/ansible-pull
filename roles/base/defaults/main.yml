@@ -47,9 +47,11 @@ base_apt_refresh_randomized_delay_sec: "0"
 
 base_managed_package_updates_enabled: true
 base_managed_package_updates_timer_on_calendar: "*-*-* 03:00:00"
+base_managed_package_updates_randomized_delay_sec: "15m"
 
 base_browser_package_updates_enabled: true
 base_browser_package_updates_timer_on_calendar: "*-*-* 04:00:00"
+base_browser_package_updates_randomized_delay_sec: "15m"
 
 base_workstation_enable_unattended_upgrades: true
 # Disable APT::Periodic list refresh because apt-refresh.timer owns that path.

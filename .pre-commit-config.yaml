@@ -36,6 +36,6 @@ repos:
         pass_filenames: false
       - id: shellcheck
         name: shellcheck
-        entry: bash -lc 'shellcheck scripts/*.sh'
+        entry: bash -lc 'shellcheck scripts/*.sh scripts/lib/*.sh'
         language: system
         pass_filenames: false
