@@ -45,6 +45,20 @@ die() {
   exit 1
 }
 
+# Record the invoking user and arguments to syslog so a fleet-wide audit can
+# attribute bootstrap runs to a person rather than just the timer-driven
+# convergence stream. Best-effort: if logger is missing we silently skip
+# rather than block bootstrap.
+audit_log_invocation() {
+  local tag="$1"
+  shift
+  local invoker="${SUDO_USER:-${USER:-unknown}}"
+
+  if command -v logger >/dev/null 2>&1; then
+    logger -t "${tag}" "invoked by ${invoker} args=$*" || true
+  fi
+}
+
 # Default bootstrap configuration and optional credential inputs.
 REPO_URL=""
 BRANCH="main"
@@ -70,6 +84,8 @@ BOOTSTRAP_PHASE="starting"
 FINAL_STATE_WRITTEN="false"
 AD_CONVERGE_SUCCEEDED="false"
 BOOTSTRAP_LIBS_LOADED="false"
+GIT_CREDENTIALS_WRITTEN="false"
+GIT_CREDENTIALS_FILE="/root/.git-credentials-ansible-pull"
 
 # Parse CLI arguments into global script settings.
 parse_args() {
@@ -220,11 +236,12 @@ configure_git_credentials() {
       die "--github-user and a token source must be provided together."
     fi
 
-    cat > /root/.git-credentials-ansible-pull <<EOF
+    cat > "${GIT_CREDENTIALS_FILE}" <<EOF
 https://${GITHUB_USER}:${GITHUB_TOKEN}@github.com
 EOF
-    chmod 0600 /root/.git-credentials-ansible-pull
-    git config --global credential.helper "store --file /root/.git-credentials-ansible-pull"
+    chmod 0600 "${GIT_CREDENTIALS_FILE}"
+    git config --global credential.helper "store --file ${GIT_CREDENTIALS_FILE}"
+    GIT_CREDENTIALS_WRITTEN="true"
   fi
 }
 
@@ -338,6 +355,20 @@ sync_repository_checkout() {
       git clone --depth 1 --branch "${ref}" "${REPO_URL}" "${DEST}"
     fi
   fi
+
+  # Once the inline path lands a checkout, the shared verifier is available
+  # for the same HEAD-vs-expected check the runtime wrapper uses. Sourcing
+  # is idempotent so doing it again later in main() is safe.
+  if [[ -f "${DEST}/scripts/lib/git_sync.sh" ]]; then
+    # shellcheck disable=SC1091
+    source "${DEST}/scripts/lib/git_sync.sh"
+    local is_commit_pin="false"
+    if [[ -n "${COMMIT}" ]]; then
+      is_commit_pin="true"
+    fi
+    git_verify_head_matches_ref "${DEST}" "${ref}" "${is_commit_pin}" \
+      || die "Bootstrap clone of ${REPO_URL} did not land at expected ref ${ref}."
+  fi
 }
 
 write_bootstrap_file() {
@@ -407,6 +438,17 @@ cleanup_bootstrap_state_on_exit() {
 
   if [[ "${FINAL_STATE_WRITTEN}" == "true" ]]; then
     return "${exit_code}"
+  fi
+
+  # If bootstrap aborted before reaching its successful terminal state, scrub
+  # any GitHub PAT we wrote earlier so a half-finished install does not leave
+  # a credential file or git config helper pointing at a token that may no
+  # longer be needed. On the success path GIT_CREDENTIALS_WRITTEN stays set
+  # but FINAL_STATE_WRITTEN gates this branch out, so the credentials remain
+  # in place for the runtime wrapper.
+  if [[ "${GIT_CREDENTIALS_WRITTEN}" == "true" ]]; then
+    rm -f "${GIT_CREDENTIALS_FILE}" || true
+    git config --global --unset credential.helper >/dev/null 2>&1 || true
   fi
 
   if [[ -z "${REPO_URL}" || -z "${BRANCH}" || -z "${PLAYBOOK}" || -z "${DEST}" || -z "${LOG_DIR}" || -z "${SHORT_HOSTNAME}" || -z "${MACHINE_TYPE}" ]]; then
@@ -595,6 +637,7 @@ run_final_upgrade() {
 #           configures SSSD.
 main() {
   trap cleanup_bootstrap_state_on_exit EXIT
+  audit_log_invocation "ansible-pull-bootstrap" "$@"
   parse_args "$@"
   validate_prerequisites
   install_bootstrap_dependencies

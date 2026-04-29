@@ -43,6 +43,9 @@ source_script_lib "git_sync.sh"
 load_environment() {
   load_env_file "${ENV_FILE}"
   validate_pull_env
+  if [[ -f "${BOOTSTRAP_VARS_FILE}" ]]; then
+    validate_bootstrap_vars_file "${BOOTSTRAP_VARS_FILE}"
+  fi
 }
 
 # Prepare directories and derive per-host runtime file paths.

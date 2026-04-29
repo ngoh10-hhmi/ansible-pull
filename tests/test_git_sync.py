@@ -77,3 +77,81 @@ def test_sync_checkout_or_clone_supports_fresh_commit_pin(tmp_path: Path) -> Non
 
     assert head_sha == commit_sha
     assert symbolic_ref.returncode != 0
+
+
+def test_git_verify_head_matches_ref_accepts_matching_commit(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    commit_sha = create_git_repo(repo_dir)
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                f"git_verify_head_matches_ref {shlex.quote(str(repo_dir))} {commit_sha} true",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_git_verify_head_matches_ref_rejects_wrong_commit(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    create_git_repo(repo_dir)
+    wrong_sha = "0123456789abcdef0123456789abcdef01234567"
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                f"git_verify_head_matches_ref {shlex.quote(str(repo_dir))} {wrong_sha} true",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "does not match expected" in result.stderr or "does not match expected" in result.stdout
+
+
+def test_git_verify_head_matches_ref_rejects_missing_branch(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    create_git_repo(repo_dir)
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                f"git_verify_head_matches_ref {shlex.quote(str(repo_dir))} unknown-branch false",
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "could not resolve expected ref" in result.stderr or "could not resolve expected ref" in result.stdout
+
+
+def test_sync_checkout_or_clone_fresh_branch_clone_lands_on_expected_head(tmp_path: Path) -> None:
+    repo_dir = tmp_path / "repo"
+    checkout_dir = tmp_path / "checkout"
+    commit_sha = create_git_repo(repo_dir)
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                (
+                    "sync_checkout_or_clone "
+                    f"{shlex.quote(str(checkout_dir))} "
+                    f"{shlex.quote(str(repo_dir))} "
+                    "main "
+                    "1"
+                ),
+            ]
+        )
+    )
+
+    head_sha = run("git", "-C", str(checkout_dir), "rev-parse", "HEAD").stdout.strip()
+    assert head_sha == commit_sha

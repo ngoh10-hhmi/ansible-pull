@@ -10,9 +10,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 VALID_SHA = "0123456789abcdef0123456789abcdef01234567"
 
 
+VENV_BIN = REPO_ROOT / ".venv" / "bin"
+
+
 def run_bash(script: str, *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    # bash -l sources /etc/profile.d which can prepend linuxbrew/etc ahead of
+    # any PATH we pass through env=. Force the venv's python3 to win by
+    # prepending inside the script itself so the bootstrap-vars validator
+    # that write_bootstrap_vars now invokes finds the venv's PyYAML.
+    prelude = f'export PATH="{VENV_BIN}{os.pathsep}$PATH"\n'
     return subprocess.run(
-        ["bash", "-lc", script],
+        ["bash", "-lc", prelude + script],
         cwd=REPO_ROOT,
         check=check,
         text=True,
