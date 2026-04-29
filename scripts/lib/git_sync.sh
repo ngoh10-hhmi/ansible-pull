@@ -46,6 +46,44 @@ git_fetch_branch_ref() {
   git -C "${repo_dir}" fetch "${fetch_args[@]}"
 }
 
+# Compare HEAD against the expected ref after a checkout/reset so a partial
+# git operation (e.g. an interrupted reset --hard) cannot leave the repository
+# at the wrong commit while sync_checkout_or_clone reports success.
+git_verify_head_matches_ref() {
+  local repo_dir="$1"
+  local ref="$2"
+  local is_commit="$3"
+  local actual_head=""
+  local expected_head=""
+
+  actual_head="$(git -C "${repo_dir}" rev-parse --verify HEAD 2>/dev/null || true)"
+  if [[ -z "${actual_head}" ]]; then
+    git_sync_log "Error: could not resolve HEAD in ${repo_dir} after sync."
+    return 1
+  fi
+
+  if [[ "${is_commit}" == "true" ]]; then
+    # Normalise to lowercase so a mixed-case pin still compares equal.
+    expected_head="${ref,,}"
+  else
+    # --verify with the ^{commit} peel forces git to return only on a real
+    # commit-pointing ref. Without --verify, git prints the literal arg back
+    # on stdout when the ref is unknown, which would silently make the next
+    # equality check report "mismatch" instead of "ref missing".
+    expected_head="$(git -C "${repo_dir}" rev-parse --verify "origin/${ref}^{commit}" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "${expected_head}" ]]; then
+    git_sync_log "Error: could not resolve expected ref '${ref}' in ${repo_dir}."
+    return 1
+  fi
+
+  if [[ "${actual_head,,}" != "${expected_head,,}" ]]; then
+    git_sync_log "Error: HEAD ${actual_head} does not match expected ${expected_head}."
+    return 1
+  fi
+}
+
 git_fetch_commit_ref() {
   local repo_dir="$1"
   local ref="$2"
@@ -103,6 +141,7 @@ sync_checkout_or_clone() {
         git -C "${dest}" reset --hard "origin/${ref}"
       fi
       git -C "${dest}" clean -fdx
+      git_verify_head_matches_ref "${dest}" "${ref}" "${is_commit}"
     ); then
       git_sync_log "Successfully synced existing repository."
       return 0
@@ -121,7 +160,8 @@ sync_checkout_or_clone() {
       && git -C "${dest}" remote add origin "${repo_url}" \
       && git_fetch_commit_ref "${dest}" "${ref}" "${clone_depth}" \
       && git -C "${dest}" checkout --detach "${ref}" \
-      && git -C "${dest}" reset --hard "${ref}"; then
+      && git -C "${dest}" reset --hard "${ref}" \
+      && git_verify_head_matches_ref "${dest}" "${ref}" "true"; then
       git_sync_log "Successfully cloned repository."
       return 0
     fi
@@ -131,7 +171,8 @@ sync_checkout_or_clone() {
     fi
     clone_args+=(--branch "${ref}")
 
-    if git clone "${clone_args[@]}" "${repo_url}" "${dest}"; then
+    if git clone "${clone_args[@]}" "${repo_url}" "${dest}" \
+      && git_verify_head_matches_ref "${dest}" "${ref}" "false"; then
       git_sync_log "Successfully cloned repository."
       return 0
     fi

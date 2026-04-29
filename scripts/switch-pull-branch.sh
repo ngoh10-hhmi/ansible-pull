@@ -21,6 +21,19 @@ die() {
   exit 1
 }
 
+# Record the invoking user and arguments to syslog so the audit trail covers
+# branch/commit pin changes alongside the bootstrap audit entries. Best-effort
+# only — if logger is missing the script continues normally.
+audit_log_invocation() {
+  local tag="$1"
+  shift
+  local invoker="${SUDO_USER:-${USER:-unknown}}"
+
+  if command -v logger >/dev/null 2>&1; then
+    logger -t "${tag}" "invoked by ${invoker} args=$*" || true
+  fi
+}
+
 source_script_lib() {
   local filename="$1"
   local candidate=""
@@ -201,6 +214,11 @@ write_bootstrap_vars() {
 
   install -m 0600 "${tmp_file}" "${BOOTSTRAP_VARS_FILE}"
   rm -f "${tmp_file}"
+
+  # Catch a corrupt rewrite (e.g. a malformed key from a manual edit that
+  # awk preserved) before the next scheduled converge silently runs against
+  # bad config.
+  validate_bootstrap_vars_file "${BOOTSTRAP_VARS_FILE}"
 }
 
 print_summary() {
@@ -226,6 +244,7 @@ maybe_run_now() {
 }
 
 main() {
+  audit_log_invocation "ansible-pull-switch-branch" "$@"
   parse_args "$@"
   require_root
   load_existing_pull_env

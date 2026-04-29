@@ -1,4 +1,3 @@
-PYTHON ?= python3.12
 VENV ?= .venv
 ACTIVATE = . $(VENV)/bin/activate
 

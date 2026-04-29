@@ -291,6 +291,74 @@ def test_is_valid_short_hostname_rejects_invalid_values() -> None:
     )
 
 
+def test_cleanup_bootstrap_state_removes_git_credentials_on_partial_failure(tmp_path: Path) -> None:
+    creds_file = tmp_path / "git-credentials"
+    creds_file.write_text("https://example/secret\n", encoding="utf-8")
+    config_file = tmp_path / "gitconfig"
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                bootstrap_fixture_assignments(tmp_path),
+                f'GIT_CREDENTIALS_FILE={shlex.quote(str(creds_file))}',
+                'GIT_CREDENTIALS_WRITTEN="true"',
+                'BOOTSTRAP_PHASE="initial"',
+                'AD_CONVERGE_SUCCEEDED="false"',
+                'FINAL_STATE_WRITTEN="false"',
+                # Pin the global git config the trap touches into the tmp_path
+                # so this test does not mutate the developer's real ~/.gitconfig.
+                f'export GIT_CONFIG_GLOBAL={shlex.quote(str(config_file))}',
+                f'git config --file {shlex.quote(str(config_file))} credential.helper "store --file {creds_file}"',
+                "cleanup_bootstrap_state_on_exit",
+            ]
+        )
+    )
+
+    assert not creds_file.exists()
+    helper_check = subprocess.run(
+        ["git", "config", "--file", str(config_file), "--get", "credential.helper"],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert helper_check.returncode != 0
+
+
+def test_cleanup_bootstrap_state_keeps_git_credentials_after_final_state(tmp_path: Path) -> None:
+    creds_file = tmp_path / "git-credentials"
+    creds_file.write_text("https://example/secret\n", encoding="utf-8")
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                bootstrap_fixture_assignments(tmp_path),
+                f'GIT_CREDENTIALS_FILE={shlex.quote(str(creds_file))}',
+                'GIT_CREDENTIALS_WRITTEN="true"',
+                'FINAL_STATE_WRITTEN="true"',
+                "cleanup_bootstrap_state_on_exit",
+            ]
+        )
+    )
+
+    assert creds_file.exists()
+
+
+def test_audit_log_invocation_is_no_op_when_logger_missing(tmp_path: Path) -> None:
+    # Stub `command -v` so the function thinks logger is unavailable; the
+    # script should continue without raising.
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                "command() { return 1; }",
+                'audit_log_invocation "ansible-pull-bootstrap" "--repo" "https://example.invalid"',
+            ]
+        )
+    )
+
+
 def test_pull_env_round_trip_preserves_shell_metacharacters(tmp_path: Path) -> None:
     env_file = tmp_path / "pull.env"
     result = run_bash(
