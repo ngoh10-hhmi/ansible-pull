@@ -155,3 +155,50 @@ def test_sync_checkout_or_clone_fresh_branch_clone_lands_on_expected_head(tmp_pa
 
     head_sha = run("git", "-C", str(checkout_dir), "rev-parse", "HEAD").stdout.strip()
     assert head_sha == commit_sha
+
+
+def create_git_repo_with_two_commits(path: Path) -> tuple[str, str]:
+    path.mkdir()
+    run("git", "init", "--quiet", "-b", "main", cwd=path)
+    run("git", "config", "user.name", "Git Sync Test", cwd=path)
+    run("git", "config", "user.email", "git-sync-test@example.com", cwd=path)
+    (path / "README.md").write_text("rev one\n", encoding="utf-8")
+    run("git", "add", "README.md", cwd=path)
+    run("git", "commit", "--quiet", "-m", "First commit", cwd=path)
+    older = run("git", "rev-parse", "HEAD", cwd=path).stdout.strip()
+    (path / "README.md").write_text("rev two\n", encoding="utf-8")
+    run("git", "add", "README.md", cwd=path)
+    run("git", "commit", "--quiet", "-m", "Second commit", cwd=path)
+    newer = run("git", "rev-parse", "HEAD", cwd=path).stdout.strip()
+    return older, newer
+
+
+def test_sync_checkout_or_clone_supports_pinning_to_older_commit(tmp_path: Path) -> None:
+    # Pinning to a commit older than the branch tip exercises the part of
+    # the rollback path that the "same-commit-as-tip" test does not: the
+    # initial --depth 1 fetch may not surface the older commit, so the
+    # fallback in git_fetch_commit_ref has to broaden the fetch until the
+    # SHA is reachable. Without that fallback this test would clone HEAD,
+    # fail to resolve the older SHA on reset --hard, and exit non-zero.
+    repo_dir = tmp_path / "repo"
+    checkout_dir = tmp_path / "checkout"
+    older_sha, newer_sha = create_git_repo_with_two_commits(repo_dir)
+
+    run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                (
+                    "sync_checkout_or_clone "
+                    f"{shlex.quote(str(checkout_dir))} "
+                    f"{shlex.quote(str(repo_dir))} "
+                    f"{older_sha} "
+                    "1"
+                ),
+            ]
+        )
+    )
+
+    head_sha = run("git", "-C", str(checkout_dir), "rev-parse", "HEAD").stdout.strip()
+    assert head_sha == older_sha
+    assert head_sha != newer_sha
