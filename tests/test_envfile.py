@@ -123,6 +123,81 @@ def test_validate_bootstrap_vars_rejects_missing_file(tmp_path: Path) -> None:
     assert f"Missing {missing}" in result.stderr
 
 
+def test_validate_bootstrap_vars_accepts_non_ad_file_without_ad_only_keys(tmp_path: Path) -> None:
+    # The integration tests and any non-AD converge intentionally omit
+    # target_hostname / machine_type. Those keys are consumed by the AD
+    # enrollment path only (asserted in roles/base/tasks/ad_join.yml when
+    # base_ad_enroll is true), so the validator must not require them when
+    # AD enrollment is disabled.
+    vars_file = tmp_path / "bootstrap-vars.yml"
+    vars_file.write_text(
+        textwrap.dedent(
+            """\
+            base_ansible_pull_repo_url: "https://github.com/example/ansible-pull.git"
+            base_ansible_pull_branch: "testing"
+            base_ansible_pull_playbook: "playbooks/workstation.yml"
+            base_ansible_pull_directory: "/var/lib/ansible-pull"
+            base_ansible_pull_log_dir: "/var/log/ansible-pull"
+            base_ad_enroll: false
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = call_validator(vars_file)
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_validate_bootstrap_vars_requires_ad_only_keys_when_ad_enabled(tmp_path: Path) -> None:
+    vars_file = tmp_path / "bootstrap-vars.yml"
+    vars_file.write_text(
+        textwrap.dedent(
+            """\
+            base_ansible_pull_repo_url: "https://github.com/example/ansible-pull.git"
+            base_ansible_pull_branch: "testing"
+            base_ansible_pull_playbook: "playbooks/workstation.yml"
+            base_ansible_pull_directory: "/var/lib/ansible-pull"
+            base_ansible_pull_log_dir: "/var/log/ansible-pull"
+            base_ad_enroll: true
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = call_validator(vars_file)
+
+    assert result.returncode != 0
+    assert "missing or empty required key: target_hostname" in result.stderr
+    assert "missing or empty required key: machine_type" in result.stderr
+
+
+def test_validate_bootstrap_vars_rejects_invalid_machine_type_when_ad_disabled(tmp_path: Path) -> None:
+    # If machine_type is present at all, it must be a valid value, even on a
+    # non-AD bootstrap-vars file — a stray "tablet" still indicates an
+    # incorrectly written file.
+    vars_file = tmp_path / "bootstrap-vars.yml"
+    vars_file.write_text(
+        textwrap.dedent(
+            """\
+            base_ansible_pull_repo_url: "https://github.com/example/ansible-pull.git"
+            base_ansible_pull_branch: "testing"
+            base_ansible_pull_playbook: "playbooks/workstation.yml"
+            base_ansible_pull_directory: "/var/lib/ansible-pull"
+            base_ansible_pull_log_dir: "/var/log/ansible-pull"
+            base_ad_enroll: false
+            machine_type: "tablet"
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    result = call_validator(vars_file)
+
+    assert result.returncode != 0
+    assert "machine_type must be 'laptop' or 'desktop'" in result.stderr
+
+
 def test_validate_bootstrap_vars_rejects_garbage_branch_name(tmp_path: Path) -> None:
     vars_file = tmp_path / "bootstrap-vars.yml"
     vars_file.write_text(

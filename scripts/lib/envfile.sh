@@ -97,15 +97,20 @@ if not isinstance(data, dict):
     print(f"Bootstrap vars file {path} must be a YAML mapping.", file=sys.stderr)
     sys.exit(1)
 
-required_string_keys = (
+# Pull-side keys are required for any converge. target_hostname /
+# machine_type are only consumed by the AD enrollment path
+# (roles/base/tasks/ad_join.yml asserts them when base_ad_enroll is true),
+# so non-AD converges and the integration test harness should not be
+# forced to provide them.
+required_string_keys = [
     "base_ansible_pull_repo_url",
     "base_ansible_pull_branch",
     "base_ansible_pull_playbook",
     "base_ansible_pull_directory",
     "base_ansible_pull_log_dir",
-    "target_hostname",
-    "machine_type",
-)
+]
+if data.get("base_ad_enroll") is True:
+    required_string_keys += ["target_hostname", "machine_type"]
 
 errors = []
 for key in required_string_keys:
@@ -114,7 +119,9 @@ for key in required_string_keys:
         errors.append(f"missing or empty required key: {key}")
 
 machine_type = data.get("machine_type")
-if isinstance(machine_type, str) and machine_type not in ("laptop", "desktop"):
+if machine_type is not None and (
+    not isinstance(machine_type, str) or machine_type not in ("laptop", "desktop")
+):
     errors.append(
         f"machine_type must be 'laptop' or 'desktop' (got {machine_type!r})"
     )
