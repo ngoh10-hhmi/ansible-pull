@@ -15,6 +15,10 @@ This repo manages Ubuntu workstations with `ansible-pull`.
 - `scripts/bootstrap-ubuntu.sh`: first-run bootstrap on a fresh Ubuntu machine
 - `scripts/run-ansible-pull.sh`: recurring/manual convergence wrapper
 - `scripts/switch-pull-branch.sh`: updates branch/repo settings on an enrolled machine
+- `scripts/lib/envfile.sh`: reads/writes `/etc/ansible/pull.env` and validates the `bootstrap-vars.yml` schema
+- `scripts/lib/git_sync.sh`: checkout/clone helper; verifies HEAD matches the requested ref after every reset
+- `scripts/doctor.sh`: fast local and managed-host sanity check (invoked by `make doctor` and on workstations)
+- `scripts/apt-refresh.sh` / `scripts/upgrade-installed-apt-packages.sh` / `scripts/update-installed-browsers.sh`: helpers behind the hourly/daily maintenance timers
 - `docs/slack-webhook-setup.md`: operator guide for optional Slack notifications
 - `roles/base/tasks/main.yml`: baseline packages, timers, unattended-upgrades, local users
 - `roles/base/tasks/ad_join.yml`: HHMI AD join and SSSD configuration
@@ -41,6 +45,10 @@ Preferred local setup:
 ./scripts/setup-dev.sh
 make doctor
 ```
+
+Python 3.12 or newer is required. `.python-version` pins 3.12 for local
+development, and CI runs the matrix against both 3.12 and 3.14, so anything
+that depends on 3.12-only behavior will fail in CI.
 
 Manual toolchain install if you are not using the helper:
 
@@ -144,9 +152,31 @@ Variable precedence:
 - `switch-pull-branch.sh` must keep `/etc/ansible/pull.env` and `/etc/ansible/bootstrap-vars.yml` aligned.
 - `switch-pull-branch.sh` preserves Slack-related values stored in
   `/etc/ansible/pull.env`.
-- `/etc/ansible/pull.env` is shell-escaped through a shared helper and should
-  still be treated as machine-local runtime state rather than hand-maintained
-  configuration.
+- `/etc/ansible/pull.env` is shell-escaped through a shared helper, written
+  mode `0600`, and should be treated as machine-local runtime state rather
+  than hand-maintained configuration.
+
+Bootstrap-vars schema:
+
+- `run-ansible-pull` and `switch-pull-branch.sh` both validate
+  `/etc/ansible/bootstrap-vars.yml` via `validate_bootstrap_vars_file` in
+  `scripts/lib/envfile.sh` before doing work, so a corrupted or hand-edited
+  file fails fast rather than silently driving a converge against bad config.
+- The five `base_ansible_pull_*` keys (repo URL, branch, playbook, directory,
+  log dir) are required for any converge.
+- `target_hostname` and `machine_type` (`laptop` or `desktop`) are required
+  only when `base_ad_enroll: true`; non-AD converges omit them.
+- The branch field must be a valid branch name or a 40-char hex SHA.
+
+Per-host package list files (created and managed by the role under
+`/etc/ansible/`, consumed by the maintenance timers):
+
+- `managed-package-updates.list`: drives `managed-package-updates.timer`
+- `browser-package-updates.list`: APT browser upgrade list
+- `browser-snap-updates.list`: snap browser refresh list
+
+Comments (`#`) and blank lines are filtered out by the helper scripts, so the
+files can be edited and commented like normal config.
 
 Inventory behavior:
 
@@ -215,6 +245,26 @@ resets to that exact SHA on every run, so it never drifts forward.
 - The base role also installs `/etc/logrotate.d/ansible-pull`; those logs are
   rotated weekly and compressed. Keep that in mind when giving debugging or
   retention advice.
+- `bootstrap-ubuntu.sh` and `switch-pull-branch.sh` log every invocation to
+  syslog under tags `ansible-pull-bootstrap` and `ansible-pull-switch-branch`
+  with the invoking user (`SUDO_USER`) and arguments. Use
+  `journalctl -t ansible-pull-bootstrap` (or the switch-branch tag) for the
+  audit trail. Best-effort: if `logger` is missing the script still runs.
+- Git checkouts are verified against the resolved expected ref after every
+  `git reset --hard` via `git_verify_head_matches_ref` in `scripts/lib/git_sync.sh`.
+  A partial git operation that leaves the tree on the wrong commit fails the
+  sync rather than running ansible against drifted code.
+- If bootstrap aborts before its successful terminal state, the trap scrubs
+  `/root/.git-credentials-ansible-pull` and the corresponding
+  `git config --global credential.helper` entry. On the success path those
+  stay in place for the runtime wrapper to use on private-repo pulls.
+- `update-installed-browsers.sh` refreshes snaps individually so a single bad
+  snap does not block the others. Failures are aggregated and printed; the
+  unit returns non-zero if any snap failed so systemd marks it failed.
+- The APT helpers (`apt-refresh.sh` and `upgrade-installed-apt-packages.sh`)
+  pass `DPkg::Lock::Timeout=600` so they wait up to 10 minutes for the dpkg
+  lock instead of failing immediately when another timer-driven or
+  ansible-pull APT operation is mid-flight.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.
