@@ -64,6 +64,8 @@ The rough flow is:
 11. rewrite the final stable bootstrap vars without one-time sudo keys
 12. enable the timer and run a final package upgrade
 
+If the host is already joined to Active Directory (e.g. during a re-run of the bootstrap script), the script detects this and performs a single-phase converge directly with `base_ad_enroll: true`. This avoids prompting the operator for domain credentials, skips the first baseline run, and bypasses the reboot warning.
+
 The key idea is that bootstrap writes machine-local values into files under
 `/etc/ansible/`. Those files persist on the workstation and are reused on later
 scheduled runs.

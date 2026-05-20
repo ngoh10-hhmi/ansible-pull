@@ -117,10 +117,10 @@ Bootstrap flow:
 3. It installs `/usr/local/sbin/run-ansible-pull` plus its shared helper libraries.
 4. It writes `/etc/ansible/pull.env` through the shared env-file helper.
 5. It prompts for hostname, machine type, and optional sudo users.
-6. It writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`.
-7. It runs `/usr/local/sbin/run-ansible-pull`.
-8. It then collects AD credentials, writes a temporary AD-phase bootstrap state, and performs the AD enrollment converge.
-9. It rewrites the final stable bootstrap vars without one-time sudo keys, enables the timer, and does a final package upgrade.
+6. It checks if the host is already joined to Active Directory (via `realm list`).
+7. If not joined, it writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`, runs `/usr/local/sbin/run-ansible-pull`, prompts for AD credentials (normalizing input to strip any domain suffix), performs the AD enrollment converge, and rewrites the final stable bootstrap vars.
+8. If already joined, it skips Phase 1 and the credential prompt, writes the final bootstrap vars directly (with `base_ad_enroll: true`), and runs a single converge.
+9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 
 Bootstrap-only sudo-user choices are applied during the AD enrollment
 converge after NSS/SSSD can resolve them, but they are not kept in the final

@@ -390,3 +390,255 @@ def test_pull_env_round_trip_preserves_shell_metacharacters(tmp_path: Path) -> N
     assert f"LOG_DIR={tmp_path / 'logs dir'}" in result.stdout
     assert "SLACK_WEBHOOK_URL=https://hooks.slack.invalid/services/T000/B000/XYZ?foo=1&bar=$HOME" in result.stdout
     assert "SLACK_NOTIFY_SUCCESS=true" in result.stdout
+
+
+def test_join_active_directory_strips_domain_suffix() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+
+            # Mock read to return username with suffix, and some password
+            read() {
+              local var_name="${@: -1}"
+              if [[ "$*" == *"Username"* ]]; then
+                eval "${var_name}='duckd-a@hhmi.org'"
+              elif [[ "$*" == *"Password"* ]]; then
+                eval "${var_name}='password123'"
+              fi
+            }
+
+            # Mock kinit to echo the principal it received
+            kinit() {
+              echo "KINIT_PRINCIPAL:$1"
+              return 0
+            }
+
+            # Mock command -v
+            command() {
+              if [[ "$2" == "kinit" ]]; then
+                return 0
+              fi
+              # fallback
+              builtin command "$@"
+            }
+
+            # Mock the commands called inside/after join_active_directory
+            write_bootstrap_vars_ad_phase_state() { :; }
+            /usr/local/sbin/run-ansible-pull() { :; }
+
+            join_active_directory
+            """
+        )
+    )
+    assert "KINIT_PRINCIPAL:duckd-a@HHMI.ORG" in result.stdout
+
+
+def test_is_already_joined_to_ad_helper() -> None:
+    # When realm command is missing
+    result_missing = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            command() {
+              if [[ "$2" == "realm" ]]; then
+                return 1
+              fi
+              builtin command "$@"
+            }
+            if is_already_joined_to_ad; then
+              echo "joined"
+            else
+              echo "not joined"
+            fi
+            """
+        )
+    )
+    assert "not joined" in result_missing.stdout
+
+    # When realm command exists but hhmi.org is not listed
+    result_not_joined = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            command() {
+              if [[ "$2" == "realm" ]]; then
+                return 0
+              fi
+              builtin command "$@"
+            }
+            realm() {
+              echo "otherdomain.com"
+            }
+            if is_already_joined_to_ad; then
+              echo "joined"
+            else
+              echo "not joined"
+            fi
+            """
+        )
+    )
+    assert "not joined" in result_not_joined.stdout
+
+    # When realm command exists and hhmi.org is listed
+    result_joined = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            command() {
+              if [[ "$2" == "realm" ]]; then
+                return 0
+              fi
+              builtin command "$@"
+            }
+            realm() {
+              echo "hhmi.org"
+            }
+            if is_already_joined_to_ad; then
+              echo "joined"
+            else
+              echo "not joined"
+            fi
+            """
+        )
+    )
+    assert "joined" in result_joined.stdout
+
+
+def test_main_skips_enrollment_if_already_joined() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+
+            # Mock all setup functions
+            audit_log_invocation() { :; }
+            parse_args() { :; }
+            validate_prerequisites() { :; }
+            install_bootstrap_dependencies() { :; }
+            prepare_runtime_directories() { :; }
+            configure_git_credentials() { :; }
+            sync_repository_checkout() { :; }
+            source_checkout_libs() { :; }
+            install_runtime_support() { :; }
+            write_pull_environment() { :; }
+            prompt_machine_identity() { :; }
+
+            # Mock AD check to return true (already joined)
+            is_already_joined_to_ad() {
+              return 0
+            }
+
+            # Mock execution steps
+            write_bootstrap_vars_final_state() {
+              echo "WRITE_FINAL_STATE"
+            }
+            write_bootstrap_vars_initial_state() {
+              echo "WRITE_INITIAL_STATE"
+            }
+            run_initial_configuration() {
+              echo "RUN_CONVERGE"
+            }
+            join_active_directory() {
+              echo "JOIN_ACTIVE_DIRECTORY"
+            }
+            mark_final_state_written() {
+              echo "MARK_FINAL_STATE"
+            }
+            enable_pull_timer() {
+              echo "ENABLE_PULL_TIMER"
+            }
+            run_final_upgrade() {
+              echo "RUN_FINAL_UPGRADE"
+            }
+            print_ad_reboot_warning() {
+              echo "PRINT_REBOOT_WARNING"
+            }
+
+            # Run main
+            main
+            """
+        )
+    )
+    # Verify that Phase 1 & join_active_directory are skipped
+    assert "WRITE_INITIAL_STATE" not in result.stdout
+    assert "JOIN_ACTIVE_DIRECTORY" not in result.stdout
+
+    # Verify that Phase 2 is run directly
+    assert "WRITE_FINAL_STATE" in result.stdout
+    assert "RUN_CONVERGE" in result.stdout
+    assert "MARK_FINAL_STATE" in result.stdout
+    assert "ENABLE_PULL_TIMER" in result.stdout
+    assert "RUN_FINAL_UPGRADE" in result.stdout
+
+    # Verify that reboot warning is skipped
+    assert "PRINT_REBOOT_WARNING" not in result.stdout
+
+
+def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+
+            # Mock all setup functions
+            audit_log_invocation() { :; }
+            parse_args() { :; }
+            validate_prerequisites() { :; }
+            install_bootstrap_dependencies() { :; }
+            prepare_runtime_directories() { :; }
+            configure_git_credentials() { :; }
+            sync_repository_checkout() { :; }
+            source_checkout_libs() { :; }
+            install_runtime_support() { :; }
+            write_pull_environment() { :; }
+            prompt_machine_identity() { :; }
+
+            # Mock AD check to return false (not joined)
+            is_already_joined_to_ad() {
+              return 1
+            }
+
+            # Mock execution steps
+            write_bootstrap_vars_final_state() {
+              echo "WRITE_FINAL_STATE"
+            }
+            write_bootstrap_vars_initial_state() {
+              echo "WRITE_INITIAL_STATE"
+            }
+            run_initial_configuration() {
+              echo "RUN_CONVERGE"
+            }
+            join_active_directory() {
+              echo "JOIN_ACTIVE_DIRECTORY"
+            }
+            mark_final_state_written() {
+              echo "MARK_FINAL_STATE"
+            }
+            enable_pull_timer() {
+              echo "ENABLE_PULL_TIMER"
+            }
+            run_final_upgrade() {
+              echo "RUN_FINAL_UPGRADE"
+            }
+            print_ad_reboot_warning() {
+              echo "PRINT_REBOOT_WARNING"
+            }
+
+            # Run main
+            main
+            """
+        )
+    )
+    # Verify that Phase 1 and Phase 2 are both run
+    assert "WRITE_INITIAL_STATE" in result.stdout
+    assert "JOIN_ACTIVE_DIRECTORY" in result.stdout
+    assert "WRITE_FINAL_STATE" in result.stdout
+    assert "RUN_CONVERGE" in result.stdout
+    assert "MARK_FINAL_STATE" in result.stdout
+    assert "ENABLE_PULL_TIMER" in result.stdout
+    assert "RUN_FINAL_UPGRADE" in result.stdout
+
+    # Verify that reboot warning is printed
+    assert "PRINT_REBOOT_WARNING" in result.stdout
+

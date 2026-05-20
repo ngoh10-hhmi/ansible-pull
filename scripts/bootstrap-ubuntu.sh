@@ -499,6 +499,13 @@ is_valid_short_hostname() {
   [[ "${hostname}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,13}[A-Za-z0-9])?$ ]]
 }
 
+is_already_joined_to_ad() {
+  if command -v realm >/dev/null 2>&1 && realm list | grep -q "hhmi.org"; then
+    return 0
+  fi
+  return 1
+}
+
 # Prompt for machine identity metadata used by the Ansible role.
 prompt_machine_identity() {
   local current_short_hostname
@@ -570,6 +577,9 @@ join_active_directory() {
   if [[ -z "${ad_user}" ]]; then
     die "Error: AD username cannot be empty."
   fi
+
+  # Strip any domain suffix if the operator typed it in (e.g. user@hhmi.org -> user)
+  ad_user="${ad_user%%@*}"
 
   if ! command -v kinit >/dev/null 2>&1; then
     die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
@@ -650,19 +660,35 @@ main() {
 
   echo "--- Initial Workstation Config ---"
   prompt_machine_identity
-  BOOTSTRAP_PHASE="initial"
-  write_bootstrap_vars_initial_state
-  run_initial_configuration
-  join_active_directory
-  # Persist the final bootstrap state with AD enabled so subsequent scheduled
-  # runs know this machine is domain-joined and can re-apply AD config if
-  # needed, without re-applying one-time local sudo-group bootstrap choices.
-  write_bootstrap_vars_final_state
-  mark_final_state_written
+
+  local was_already_joined="false"
+  if is_already_joined_to_ad; then
+    was_already_joined="true"
+  fi
+
+  if [[ "${was_already_joined}" == "true" ]]; then
+    echo "System is already joined to Active Directory (hhmi.org). Skipping enrollment prompt."
+    BOOTSTRAP_PHASE="post_ad_converge"
+    AD_CONVERGE_SUCCEEDED="true"
+    write_bootstrap_vars_final_state
+    run_initial_configuration
+    mark_final_state_written
+  else
+    BOOTSTRAP_PHASE="initial"
+    write_bootstrap_vars_initial_state
+    run_initial_configuration
+    join_active_directory
+    write_bootstrap_vars_final_state
+    mark_final_state_written
+  fi
+
   BOOTSTRAP_PHASE="enable_timer"
   enable_pull_timer
   run_final_upgrade
-  print_ad_reboot_warning
+
+  if [[ "${was_already_joined}" == "false" ]]; then
+    print_ad_reboot_warning
+  fi
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
