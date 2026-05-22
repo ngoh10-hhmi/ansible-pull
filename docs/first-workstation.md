@@ -80,7 +80,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script installs Ansible, clones the repo into `/var/lib/ansible-pull`, installs the `ansible-pull` wrapper plus its shared helper libraries, runs the playbook once, performs the AD enrollment converge, rewrites the final stable bootstrap state, and enables the timer.
-During bootstrap you will be prompted for an AD username and hidden password for the required `hhmi.org` domain join, and you can also enter a comma-separated list of existing local users that should be added to the `sudo` group as the final bootstrap action.
+During bootstrap you will be prompted for an AD username and hidden password for the required `hhmi.org` domain join, and you can also enter a comma-separated list of existing local users that should be added to the `sudo` group as the final bootstrap action. The AD username may be entered with or without the `@hhmi.org` realm suffix (case-insensitive); the script strips it before calling `kinit`. Any other `@realm` is rejected with a clear error so a typo cannot silently target the wrong domain. If the machine is already domain-joined (for example you are re-running bootstrap), the script detects this via `realm list`, skips the credential prompt and reboot warning, and runs a single converge directly with `base_ad_enroll: true`.
 The final blanket `apt-get upgrade -y` is intentional here because this flow is
 aimed at freshly imaged HHMI-managed Ubuntu systems, not arbitrary BYOD
 machines.

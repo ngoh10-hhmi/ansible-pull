@@ -64,6 +64,13 @@ Bootstrap now treats timer enablement as required. If the machine finished AD
 enrollment but `ansible-pull.timer` is not enabled, treat the bootstrap as
 incomplete and fix that before relying on scheduled converges.
 
+Re-running `bootstrap-ubuntu.sh` on a machine that is already joined to
+`hhmi.org` is safe: the script detects the existing realm membership via
+`realm list`, skips the AD credential prompt and the reboot warning, and runs
+a single converge with `base_ad_enroll: true`. Use this when you need to
+finish or repeat the post-AD steps (timer enablement, final upgrade) after a
+partial bootstrap.
+
 ## Check timer state
 
 Verify that the pull timer is installed, enabled, and scheduled:

@@ -392,46 +392,66 @@ def test_pull_env_round_trip_preserves_shell_metacharacters(tmp_path: Path) -> N
     assert "SLACK_NOTIFY_SUCCESS=true" in result.stdout
 
 
-def test_join_active_directory_strips_domain_suffix() -> None:
-    result = run_bash(
-        textwrap.dedent(
-            """\
-            source scripts/bootstrap-ubuntu.sh
+def _join_ad_harness(username: str) -> str:
+    return textwrap.dedent(
+        f"""\
+        source scripts/bootstrap-ubuntu.sh
 
-            # Mock read to return username with suffix, and some password
-            read() {
-              local var_name="${@: -1}"
-              if [[ "$*" == *"Username"* ]]; then
-                eval "${var_name}='duckd-a@hhmi.org'"
-              elif [[ "$*" == *"Password"* ]]; then
-                eval "${var_name}='password123'"
-              fi
-            }
+        read() {{
+          local var_name="${{@: -1}}"
+          if [[ "$*" == *"Username"* ]]; then
+            eval "${{var_name}}='{username}'"
+          elif [[ "$*" == *"Password"* ]]; then
+            eval "${{var_name}}='password123'"
+          fi
+        }}
 
-            # Mock kinit to echo the principal it received
-            kinit() {
-              echo "KINIT_PRINCIPAL:$1"
-              return 0
-            }
+        kinit() {{
+          echo "KINIT_PRINCIPAL:$1"
+          return 0
+        }}
 
-            # Mock command -v
-            command() {
-              if [[ "$2" == "kinit" ]]; then
-                return 0
-              fi
-              # fallback
-              builtin command "$@"
-            }
+        command() {{
+          if [[ "$2" == "kinit" ]]; then
+            return 0
+          fi
+          builtin command "$@"
+        }}
 
-            # Mock the commands called inside/after join_active_directory
-            write_bootstrap_vars_ad_phase_state() { :; }
-            /usr/local/sbin/run-ansible-pull() { :; }
+        write_bootstrap_vars_ad_phase_state() {{ :; }}
+        /usr/local/sbin/run-ansible-pull() {{ :; }}
 
-            join_active_directory
-            """
-        )
+        join_active_directory
+        """
     )
+
+
+def test_join_active_directory_strips_lowercase_realm_suffix() -> None:
+    result = run_bash(_join_ad_harness("duckd-a@hhmi.org"))
     assert "KINIT_PRINCIPAL:duckd-a@HHMI.ORG" in result.stdout
+
+
+def test_join_active_directory_strips_uppercase_realm_suffix() -> None:
+    result = run_bash(_join_ad_harness("duckd-a@HHMI.ORG"))
+    assert "KINIT_PRINCIPAL:duckd-a@HHMI.ORG" in result.stdout
+
+
+def test_join_active_directory_strips_mixed_case_realm_suffix() -> None:
+    result = run_bash(_join_ad_harness("duckd-a@Hhmi.Org"))
+    assert "KINIT_PRINCIPAL:duckd-a@HHMI.ORG" in result.stdout
+
+
+def test_join_active_directory_passes_bare_username_through() -> None:
+    result = run_bash(_join_ad_harness("duckd-a"))
+    assert "KINIT_PRINCIPAL:duckd-a@HHMI.ORG" in result.stdout
+
+
+def test_join_active_directory_rejects_other_realm_suffix() -> None:
+    result = run_bash(_join_ad_harness("duckd-a@example.com"), check=False)
+    assert result.returncode != 0
+    assert "must be in the hhmi.org realm" in result.stderr
+    assert "@example.com" in result.stderr
+    assert "KINIT_PRINCIPAL:" not in result.stdout
 
 
 def test_is_already_joined_to_ad_helper() -> None:

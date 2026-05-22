@@ -578,8 +578,17 @@ join_active_directory() {
     die "Error: AD username cannot be empty."
   fi
 
-  # Strip any domain suffix if the operator typed it in (e.g. user@hhmi.org -> user)
-  ad_user="${ad_user%%@*}"
+  # Strip the hhmi.org realm suffix if the operator typed it in
+  # (e.g. user@hhmi.org or user@HHMI.ORG -> user). Reject other realms so a
+  # typo like user@example.com fails loudly here rather than at kinit.
+  if [[ "${ad_user}" == *"@"* ]]; then
+    local ad_user_suffix="${ad_user#*@}"
+    if [[ "${ad_user_suffix,,}" == "hhmi.org" ]]; then
+      ad_user="${ad_user%@*}"
+    else
+      die "Error: AD username must be in the hhmi.org realm (got '@${ad_user_suffix}')."
+    fi
+  fi
 
   if ! command -v kinit >/dev/null 2>&1; then
     die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."

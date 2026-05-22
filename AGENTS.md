@@ -118,7 +118,7 @@ Bootstrap flow:
 4. It writes `/etc/ansible/pull.env` through the shared env-file helper.
 5. It prompts for hostname, machine type, and optional sudo users.
 6. It checks if the host is already joined to Active Directory (via `realm list`).
-7. If not joined, it writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`, runs `/usr/local/sbin/run-ansible-pull`, prompts for AD credentials (normalizing input to strip any domain suffix), performs the AD enrollment converge, and rewrites the final stable bootstrap vars.
+7. If not joined, it writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`, runs `/usr/local/sbin/run-ansible-pull`, prompts for AD credentials (stripping a trailing `@hhmi.org`/`@HHMI.ORG` realm suffix if present, and aborting if any other realm is supplied), performs the AD enrollment converge, and rewrites the final stable bootstrap vars.
 8. If already joined, it skips Phase 1 and the credential prompt, writes the final bootstrap vars directly (with `base_ad_enroll: true`), and runs a single converge.
 9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 

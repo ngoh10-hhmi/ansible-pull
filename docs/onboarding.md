@@ -63,7 +63,7 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 If the repo becomes private later, rerun the bootstrap with `--github-user` and `--github-token-file`.
-The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate usernames that should be added to the local `sudo` group once the join completes. That list can include AD usernames if they resolve through SSSD after enrollment.
+The bootstrap prompts require an AD username and hidden password for the `hhmi.org` domain join, and they also let you nominate usernames that should be added to the local `sudo` group once the join completes. That list can include AD usernames if they resolve through SSSD after enrollment. The AD username can be entered with or without the `@hhmi.org` realm suffix (case-insensitive); bootstrap strips it before the join, and rejects any other `@realm` so a typo cannot silently target the wrong domain. Re-running bootstrap on an already-joined host is safe: the script detects the existing realm membership, skips the credential prompt and reboot warning, and performs a single converge with `base_ad_enroll: true`.
 Bootstrap is intentionally opinionated for freshly imaged HHMI systems: after
 the timer is enabled it runs one final `apt-get upgrade -y` to bring the image
 current immediately.
