@@ -501,6 +501,45 @@
   ansible.builtin.import_tasks: ad_join.yml
   when: base_ad_enroll | bool
 
+# Install the Slack webhook backfill helper. The share that vends the
+# webhook (\\prfs.hhmi.org\public\test_henry\slack_webhook.txt) is
+# ACL'd to AD users, not to the machine account, and SSSD keeps user
+# TGTs in a KEYRING cache that root cannot read — so the timer-driven
+# converge cannot fetch the webhook itself. Instead we drop a small
+# helper an operator runs once per host (as themselves, no sudo) to
+# read the share via their own ticket and persist the URL into
+# /etc/ansible/pull.env. From then on the normal notify path works.
+# See docs/slack-webhook-setup.md.
+- name: Install Slack webhook backfill helper
+  when:
+    - base_slack_webhook_share_host | length > 0
+    - base_slack_webhook_share_name | length > 0
+    - base_slack_webhook_share_file | length > 0
+  block:
+    - name: Write Slack webhook backfill helper config
+      ansible.builtin.copy:
+        dest: /etc/ansible/slack-webhook.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ansible-pull. Source of truth: inventory/group_vars/all.yml
+          SHARE_HOST={{ base_slack_webhook_share_host | quote }}
+          SHARE_NAME={{ base_slack_webhook_share_name | quote }}
+          SHARE_FILE={{ base_slack_webhook_share_file | quote }}
+
+    - name: Install Slack webhook backfill helper script
+      ansible.builtin.copy:
+        content: >-
+          {{ lookup(
+            'ansible.builtin.file',
+            playbook_dir + '/../scripts/install-slack-webhook.sh'
+          ) }}
+        dest: /usr/local/bin/install-slack-webhook
+        owner: root
+        group: root
+        mode: "0755"
+
 - name: Build bootstrap-only sudo user list
   ansible.builtin.set_fact:
     base_effective_bootstrap_sudo_users: "{{ (base_bootstrap_sudo_users | default([])) | unique }}"

@@ -57,6 +57,60 @@ sudoedit /etc/ansible/pull.env
 The runtime file is now written through a shared helper that shell-escapes its
 values. If you hand-edit it, keep the existing shell-style `KEY=value` format.
 
+### Option C: Operator-Run Backfill from the AD-Protected Share
+
+For fleet-wide rollout without committing the webhook URL anywhere, the base role drops a helper script onto every converged host. The operator runs it once per host (as themselves, not via `sudo`) and the URL is read from a Kerberos-authenticated SMB share and written into `/etc/ansible/pull.env`. From then on, the existing notify path works unchanged — the share is never touched by the scheduled timer.
+
+**Why operator-run and not fully automated?**
+
+The share that holds the webhook (`\\prfs.hhmi.org\public\test_henry\slack_webhook.txt`) is ACL'd to AD users, not to the machine account. SSSD stores user Kerberos tickets in a per-session kernel KEYRING that `root` cannot read, so neither the timer-driven converge (which runs as `root`) nor a `sudo` shell can use the operator's TGT to reach the share. The helper script therefore runs **as the operator** and only escalates to `root` for the final write of `/etc/ansible/pull.env`.
+
+**Workflow on a new or existing host**
+
+1. Log in to the host as your normal AD user (this gives you a fresh TGT via PAM/SSSD).
+2. Run:
+   ```bash
+   install-slack-webhook
+   ```
+   (Run as yourself — *not* `sudo install-slack-webhook`; see above for why.)
+3. The script:
+   - Loads share location from `/etc/ansible/slack-webhook.conf`.
+   - Verifies your TGT is valid (`klist -s`).
+   - Reads the webhook via `smbclient //prfs.hhmi.org/public --use-kerberos=required`.
+   - Validates the result looks like `https://hooks.slack.com/services/...`.
+   - Prompts for `sudo` and writes the value atomically into `/etc/ansible/pull.env`.
+4. The next ansible-pull timer fire (within 15 minutes) — or a manual `sudo /usr/local/sbin/run-ansible-pull` — starts emitting Slack notifications.
+
+The helper is idempotent: if `pull.env` already has `SLACK_WEBHOOK_URL=https…`, the script exits without touching anything.
+
+**Manual verification of share connectivity from one host**
+
+Before running `install-slack-webhook`, you can confirm your account can read the file directly:
+
+```bash
+smbclient //prfs.hhmi.org/public --use-kerberos=required \
+  -c 'get "test_henry\slack_webhook.txt" -'
+```
+
+The webhook URL should print to stdout. If `smbclient` reports `NT_STATUS_ACCESS_DENIED`, the share ACL doesn't grant your account read access. If it reports `NT_STATUS_INVALID_PARAMETER` from `gensec_spnego_client_negTokenInit_step`, you're hitting a DFS namespace rather than a real SMB server — connect to the resolved backing host (e.g. `prfs.hhmi.org`) instead of the DFS root.
+
+**Forcing a re-fetch (after the webhook rotates)**
+
+Clear the current value on the host and re-run the helper:
+
+```bash
+sudo sed -i 's/^SLACK_WEBHOOK_URL=.*/SLACK_WEBHOOK_URL=/' /etc/ansible/pull.env
+install-slack-webhook
+```
+
+**Disabling the backfill on a specific host**
+
+Set one of the three share variables to an empty string in that host's `host_vars`. The base role will then skip dropping the helper and the conf file:
+
+```yaml
+base_slack_webhook_share_host: ""
+```
+
 ### Configuring Alert Behavior
 Webhook integrations are configured natively within the identical `/etc/ansible/pull.env` runtime file.
 - **Failures**: The wrapper always alerts on play failures.

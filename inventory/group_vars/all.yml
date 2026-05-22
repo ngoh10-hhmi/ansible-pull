@@ -23,6 +23,7 @@ base_workstation_base_packages:
   - krb5-user
   - cifs-utils
   - vim
+  - smbclient  # one-time Slack webhook backfill from the AD-protected share
 
 base_workstation_extra_packages: []
 
@@ -74,6 +75,13 @@ base_browser_update_packages:
   - firefox
 base_browser_update_snaps:
   - firefox
+
+# One-time Slack webhook backfill from the AD-protected SMB share.
+# Hosts that already have SLACK_WEBHOOK_URL in /etc/ansible/pull.env
+# (e.g. bootstrap was passed --slack-webhook) skip the share read.
+base_slack_webhook_share_host: "prfs.hhmi.org"
+base_slack_webhook_share_name: "public"
+base_slack_webhook_share_file: 'test_henry\slack_webhook.txt'
 
 base_workstation_enable_unattended_upgrades: true
 # The day-based APT periodic refresh stays off because systemd handles it

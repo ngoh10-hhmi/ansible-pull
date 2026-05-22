@@ -83,6 +83,15 @@ base_copy_fail_fixed_kmod_versions:
   noble: '31+20240202-2ubuntu7.2'
   questing: '34.2-2ubuntu1.1'
 
+# Optional one-time backfill of SLACK_WEBHOOK_URL from an AD-protected
+# SMB share. Set all three to enable. The task fires only on hosts that
+# (a) have completed AD enrollment, and (b) do not already have a
+# SLACK_WEBHOOK_URL in /etc/ansible/pull.env, so subsequent converges
+# are free no-ops. See docs/slack-webhook-setup.md.
+base_slack_webhook_share_host: ""
+base_slack_webhook_share_name: ""
+base_slack_webhook_share_file: ""
+
 base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
   - "Managed baseline packages from base_workstation_base_packages are upgraded daily."
