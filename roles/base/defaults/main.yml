@@ -61,6 +61,28 @@ base_workstation_unattended_upgrade_days: 30
 base_unattended_upgrade_origins_patterns:
   - 'origin=Ubuntu,archive=${distro_codename}-security'
 
+# Package name patterns excluded from unattended-upgrades. Each entry is
+# matched as a regex against package names, so a bare prefix like "nvidia-"
+# pins every nvidia-* and *nvidia-* package. NVIDIA driver packages must
+# stay at the version we install — letting the security timer upgrade them
+# in the background drifts the userspace libraries out of sync with the
+# loaded kernel module until the next reboot.
+base_unattended_upgrade_package_blacklist:
+  - 'nvidia-'
+  - 'libnvidia-'
+
+# Minimum kmod version per Ubuntu release that carries the CVE-2026-31431
+# ("Copy Fail") mitigation. The fix lives in kmod's modprobe blacklist for
+# the affected algif_aead path, so the userspace package upgrade is what
+# protects the host until a fully patched kernel ships and is rebooted into.
+# Source: https://ubuntu.com/blog/copy-fail-vulnerability-fixes-available
+# Releases not in this map (e.g. 'resolute', which Canonical lists as not
+# affected) are skipped without error.
+base_copy_fail_fixed_kmod_versions:
+  jammy: '29-1ubuntu1.1'
+  noble: '31+20240202-2ubuntu7.2'
+  questing: '34.2-2ubuntu1.1'
+
 base_security_focus_notes:
   - "Ubuntu security updates are handled through unattended-upgrades."
   - "Managed baseline packages from base_workstation_base_packages are upgraded daily."

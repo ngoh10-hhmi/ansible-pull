@@ -100,6 +100,8 @@ Notes:
 | `base_workstation_update_package_lists_days` | Day-based APT periodic refresh value | `inventory/group_vars/all.yml` | `/etc/apt/apt.conf.d/20auto-upgrades` |
 | `base_workstation_unattended_upgrade_days` | Day-based unattended-upgrades cadence | `inventory/group_vars/all.yml` | `/etc/apt/apt.conf.d/20auto-upgrades` |
 | `base_unattended_upgrade_origins_patterns` | Which package origins unattended-upgrades may install from | role defaults unless policy changes | `/etc/apt/apt.conf.d/52ansible-unattended-upgrades` |
+| `base_unattended_upgrade_package_blacklist` | Package-name patterns unattended-upgrades must skip (default pins NVIDIA driver packages) | role defaults unless policy changes | `/etc/apt/apt.conf.d/52ansible-unattended-upgrades` |
+| `base_copy_fail_fixed_kmod_versions` | Minimum kmod version per Ubuntu release for the CVE-2026-31431 ("Copy Fail") mitigation | role defaults unless a new release is added | Copy Fail mitigation block in `roles/base/tasks/main.yml` |
 
 Notes:
 

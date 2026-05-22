@@ -71,6 +71,47 @@
     state: absent
   when: (base_workstation_remove_packages | default([])) | length > 0
 
+# Mitigate CVE-2026-31431 ("Copy Fail") by ensuring kmod carries the
+# Canonical-patched version. We compare the installed version against the
+# per-release minimum and only touch kmod when the host is behind — this
+# keeps the converge a no-op on already-patched hosts and never escalates
+# into a broader dist-upgrade.
+# https://ubuntu.com/blog/copy-fail-vulnerability-fixes-available
+- name: Apply Copy Fail (CVE-2026-31431) kmod mitigation
+  when:
+    - ansible_facts['distribution'] == 'Ubuntu'
+    - ansible_facts['distribution_release'] in base_copy_fail_fixed_kmod_versions
+  block:
+    - name: Read installed kmod version
+      ansible.builtin.command: dpkg-query -W -f=${Version} kmod
+      register: base_copy_fail_installed_kmod
+      changed_when: false
+      check_mode: false
+
+    - name: Check whether installed kmod predates the Copy Fail fix
+      ansible.builtin.command:
+        argv:
+          - dpkg
+          - --compare-versions
+          - "{{ base_copy_fail_installed_kmod.stdout }}"
+          - lt
+          - "{{ base_copy_fail_fixed_kmod_versions[ansible_facts['distribution_release']] }}"
+      register: base_copy_fail_needs_update
+      changed_when: false
+      # dpkg --compare-versions returns 0 when the relation holds, 1 when it
+      # does not, and >=2 only on real errors. Treat 0/1 as success.
+      failed_when: base_copy_fail_needs_update.rc not in [0, 1]
+      check_mode: false
+
+    - name: Upgrade kmod to patch Copy Fail (CVE-2026-31431)
+      ansible.builtin.apt:
+        name: kmod
+        state: latest  # noqa package-latest
+        only_upgrade: true
+        update_cache: true
+        cache_valid_time: 3600
+      when: base_copy_fail_needs_update.rc == 0
+
 # The base role also manages the local ansible-pull runtime so the workstation
 # can keep converging itself after the first bootstrap run.
 - name: Ensure ansible-pull runtime directories exist
@@ -433,6 +474,11 @@
     content: |
       Unattended-Upgrade::Origins-Pattern {
       {% for pattern in base_unattended_upgrade_origins_patterns %}
+              "{{ pattern }}";
+      {% endfor %}
+      };
+      Unattended-Upgrade::Package-Blacklist {
+      {% for pattern in base_unattended_upgrade_package_blacklist %}
               "{{ pattern }}";
       {% endfor %}
       };

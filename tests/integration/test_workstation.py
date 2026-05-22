@@ -197,6 +197,32 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.exists
     assert unattended.contains("archive=\\${distro_codename}-security")
     assert unattended.contains('Unattended-Upgrade::Automatic-Reboot "false";')
+    assert unattended.contains("Unattended-Upgrade::Package-Blacklist")
+    assert unattended.contains('"nvidia-";')
+    assert unattended.contains('"libnvidia-";')
+
+
+def test_copy_fail_kmod_mitigation_is_applied() -> None:
+    # CVE-2026-31431 ("Copy Fail"): kmod must be at or above the per-release
+    # fixed version. Mirrors base_copy_fail_fixed_kmod_versions in
+    # roles/base/defaults/main.yml — keep both in sync.
+    fixed_versions = {
+        "jammy": "29-1ubuntu1.1",
+        "noble": "31+20240202-2ubuntu7.2",
+        "questing": "34.2-2ubuntu1.1",
+    }
+    codename = host.run("lsb_release -cs").stdout.strip()
+    required = fixed_versions.get(codename)
+    if required is None:
+        pytest.skip(f"Copy Fail fix is not tracked for Ubuntu '{codename}'")
+    installed = host.run("dpkg-query -W -f=${Version} kmod").stdout.strip()
+    assert installed, "kmod is not installed"
+    compare = host.run(
+        "dpkg --compare-versions %s ge %s" % (installed, required)
+    )
+    assert compare.rc == 0, (
+        f"kmod {installed} is below Copy Fail fix {required} for {codename}"
+    )
 
 
 def test_managed_package_updates_timer_is_installed() -> None:

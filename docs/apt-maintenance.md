@@ -10,6 +10,18 @@ Workstation package management in this repository follows a tiered approach to b
 2.  **Package Metadata Refresh (Scheduled):** A dedicated `systemd` timer runs `scripts/apt-refresh.sh` hourly to ensure the local APT cache is up-to-date.
 3.  **Targeted Package Updates (Manual/Scheduled):** For non-security packages (e.g., browsers or specific developer tools), `scripts/upgrade-installed-apt-packages.sh` can be used to upgrade a specific subset of installed packages.
 
+## Pinned packages
+
+Some packages must not move on their own schedule:
+
+- **NVIDIA driver packages** (`nvidia-`, `libnvidia-`) are listed in `Unattended-Upgrade::Package-Blacklist` in `/etc/apt/apt.conf.d/52ansible-unattended-upgrades`. The userspace libraries must match the loaded kernel module, and silent background upgrades produce a mismatch that breaks the GPU stack until reboot. Operators upgrade the driver intentionally; the blacklist only blocks the unattended path. Edit `base_unattended_upgrade_package_blacklist` in the role to add more entries.
+
+## Targeted CVE mitigations
+
+The base role applies focused CVE mitigations that don't fit the broader update schedule:
+
+- **CVE-2026-31431 ("Copy Fail"):** Each converge checks the installed `kmod` version against the per-release fixed version in `base_copy_fail_fixed_kmod_versions` (see [Canonical's advisory](https://ubuntu.com/blog/copy-fail-vulnerability-fixes-available)). If the host is behind, Ansible runs `apt-get install --only-upgrade kmod` — never a full `dist-upgrade`. Already-patched hosts skip the upgrade with no APT activity. When Canonical publishes a fix for an additional release, add the codename → version entry to the variable in `roles/base/defaults/main.yml` and mirror it in `tests/integration/test_workstation.py::test_copy_fail_kmod_mitigation_is_applied`.
+
 ## Handling APT Lock Contention
 
 Because `unattended-upgrades` and these maintenance scripts may attempt to run APT operations concurrently, all scripts in this repository use the `DPkg::Lock::Timeout=600` option.
