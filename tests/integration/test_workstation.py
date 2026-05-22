@@ -215,7 +215,10 @@ def test_copy_fail_kmod_mitigation_is_applied() -> None:
     required = fixed_versions.get(codename)
     if required is None:
         pytest.skip(f"Copy Fail fix is not tracked for Ubuntu '{codename}'")
-    installed = host.run("dpkg-query -W -f=${Version} kmod").stdout.strip()
+    # Single-quote the format string so the shell that host.run spawns does
+    # not expand ${Version} to an empty environment variable before
+    # dpkg-query sees it.
+    installed = host.run("dpkg-query -W -f='${Version}' kmod").stdout.strip()
     assert installed, "kmod is not installed"
     compare = host.run(
         "dpkg --compare-versions %s ge %s" % (installed, required)
