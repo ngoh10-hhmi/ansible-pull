@@ -63,13 +63,22 @@ EOF
 fi
 
 # smbclient prints the file contents to stdout when the destination
-# is "-". --quiet suppresses progress noise. We strip trailing CR/LF
-# in case the share file was authored on Windows.
+# is "-". --quiet suppresses progress noise, --no-pass plus stdin
+# redirected from /dev/null prevents the legacy "Password for ..."
+# prompt from being mixed into stdout even though
+# --use-kerberos=required already authenticates. As a defence in
+# depth we pipe through grep to extract only the first
+# https://hooks.slack.com/services/... token from the output, so any
+# stray prompt or progress line cannot pollute the URL we persist.
 webhook="$(smbclient "//${SHARE_HOST}/${SHARE_NAME}" \
   --use-kerberos=required \
+  --no-pass \
   --quiet \
   -c "get \"${SHARE_FILE}\" -" \
-  | tr -d '\r\n')"
+  </dev/null \
+  2>/dev/null \
+  | grep -oE 'https://hooks\.slack\.com/services/[A-Za-z0-9/_-]+' \
+  | head -n1)"
 
 if [[ ! "${webhook}" =~ ^https://hooks\.slack\.com/services/ ]]; then
   echo "Fetched share content does not look like a Slack webhook URL." >&2
