@@ -392,16 +392,22 @@ base_ad_enroll: false
 EOF
 }
 
-write_bootstrap_vars_ad_phase_state() {
-  local sudo_users_yaml=""
+build_sudo_users_yaml() {
   local sudo_user=""
 
-  if [[ "${#SUDO_USERS[@]}" -gt 0 ]]; then
-    sudo_users_yaml=$'base_manage_bootstrap_sudo_users: true\nbase_bootstrap_sudo_users:'
-    for sudo_user in "${SUDO_USERS[@]}"; do
-      sudo_users_yaml+=$'\n'"  - ${sudo_user}"
-    done
+  if [[ "${#SUDO_USERS[@]}" -eq 0 ]]; then
+    return
   fi
+
+  printf '%s' $'base_manage_bootstrap_sudo_users: true\nbase_bootstrap_sudo_users:'
+  for sudo_user in "${SUDO_USERS[@]}"; do
+    printf '\n  - %s' "${sudo_user}"
+  done
+}
+
+write_bootstrap_vars_ad_phase_state() {
+  local sudo_users_yaml
+  sudo_users_yaml="$(build_sudo_users_yaml)"
 
   write_bootstrap_file <<EOF
 base_ansible_pull_repo_url: "${REPO_URL}"
@@ -417,6 +423,9 @@ EOF
 }
 
 write_bootstrap_vars_final_state() {
+  local sudo_users_yaml
+  sudo_users_yaml="$(build_sudo_users_yaml)"
+
   write_bootstrap_file <<EOF
 base_ansible_pull_repo_url: "${REPO_URL}"
 base_ansible_pull_branch: "${BRANCH}"
@@ -426,6 +435,7 @@ base_ansible_pull_log_dir: "${LOG_DIR}"
 target_hostname: "${SHORT_HOSTNAME}"
 machine_type: "${MACHINE_TYPE}"
 base_ad_enroll: true
+${sudo_users_yaml}
 EOF
 }
 

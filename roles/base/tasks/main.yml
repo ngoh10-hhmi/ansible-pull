@@ -545,7 +545,7 @@
     base_effective_bootstrap_sudo_users: "{{ (base_bootstrap_sudo_users | default([])) | unique }}"
   when: base_manage_bootstrap_sudo_users | bool
 
-- name: Require bootstrap sudo users to resolve through NSS
+- name: Look up bootstrap sudo users through NSS
   ansible.builtin.command:
     argv:
       - getent
@@ -553,6 +553,7 @@
       - "{{ item }}"
   register: base_sudo_user_lookup
   changed_when: false
+  failed_when: false
   retries: 5
   delay: 2
   until: base_sudo_user_lookup.rc == 0
@@ -560,6 +561,32 @@
   when:
     - base_manage_bootstrap_sudo_users | bool
     - (base_effective_bootstrap_sudo_users | length) > 0
+
+- name: Partition bootstrap sudo users by NSS resolution
+  ansible.builtin.set_fact:
+    base_resolved_bootstrap_sudo_users: >-
+      {{ base_sudo_user_lookup.results
+         | selectattr('rc', 'equalto', 0)
+         | map(attribute='item') | list }}
+    base_unresolved_bootstrap_sudo_users: >-
+      {{ base_sudo_user_lookup.results
+         | rejectattr('rc', 'equalto', 0)
+         | map(attribute='item') | list }}
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - (base_effective_bootstrap_sudo_users | length) > 0
+    - base_sudo_user_lookup.results is defined
+
+- name: Warn about bootstrap sudo users that did not resolve in NSS
+  ansible.builtin.debug:
+    msg: >-
+      Skipping bootstrap sudo group addition for unresolved user(s):
+      {{ base_unresolved_bootstrap_sudo_users | join(', ') }}.
+      Check the spelling or AD membership, then re-run bootstrap.
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - base_unresolved_bootstrap_sudo_users is defined
+    - (base_unresolved_bootstrap_sudo_users | length) > 0
 
 - name: Add bootstrap sudo users to the local sudo group
   ansible.builtin.command:
@@ -573,7 +600,7 @@
     'already a member' not in
     ((base_sudo_group_membership.stdout | default(''))
     + (base_sudo_group_membership.stderr | default('')))
-  loop: "{{ base_effective_bootstrap_sudo_users }}"
+  loop: "{{ base_resolved_bootstrap_sudo_users | default([]) }}"
   when:
     - base_manage_bootstrap_sudo_users | bool
-    - (base_effective_bootstrap_sudo_users | length) > 0
+    - (base_resolved_bootstrap_sudo_users | default([]) | length) > 0
