@@ -572,38 +572,41 @@ join_active_directory() {
   local ad_user
   local ad_password
 
-  read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
-
-  if [[ -z "${ad_user}" ]]; then
-    die "Error: AD username cannot be empty."
-  fi
-
-  # Strip the hhmi.org realm suffix if the operator typed it in
-  # (e.g. user@hhmi.org or user@HHMI.ORG -> user). Reject other realms so a
-  # typo like user@example.com fails loudly here rather than at kinit.
-  if [[ "${ad_user}" == *"@"* ]]; then
-    local ad_user_suffix="${ad_user#*@}"
-    if [[ "${ad_user_suffix,,}" == "hhmi.org" ]]; then
-      ad_user="${ad_user%@*}"
-    else
-      die "Error: AD username must be in the hhmi.org realm (got '@${ad_user_suffix}')."
-    fi
-  fi
-
   if ! command -v kinit >/dev/null 2>&1; then
     die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
   fi
 
-  echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
   while true; do
+    read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
+
+    if [[ -z "${ad_user}" ]]; then
+      echo "Error: AD username cannot be empty." >&2
+      continue
+    fi
+
+    # Strip the hhmi.org realm suffix if the operator typed it in
+    # (e.g. user@hhmi.org or user@HHMI.ORG -> user). Reject other realms so a
+    # typo like user@example.com fails loudly here rather than at kinit.
+    if [[ "${ad_user}" == *"@"* ]]; then
+      local ad_user_suffix="${ad_user#*@}"
+      if [[ "${ad_user_suffix,,}" == "hhmi.org" ]]; then
+        ad_user="${ad_user%@*}"
+      else
+        echo "Error: AD username must be in the hhmi.org realm (got '@${ad_user_suffix}')." >&2
+        continue
+      fi
+    fi
+
     read -r -s -p "AD Password: " ad_password
     echo ""
 
     if [[ -z "${ad_password}" ]]; then
       echo "Error: AD password cannot be empty." >&2
+      unset ad_password
       continue
     fi
 
+    echo "Obtaining Kerberos ticket for ${ad_user}@HHMI.ORG"
     if printf '%s\n' "${ad_password}" | kinit "${ad_user}@HHMI.ORG"; then
       # Unset the password immediately after kinit succeeds so it does not
       # linger in memory or appear in any process listing.
@@ -611,6 +614,7 @@ join_active_directory() {
       break
     fi
 
+    unset ad_password
     echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
   done
 
