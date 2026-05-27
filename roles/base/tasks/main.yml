@@ -577,17 +577,27 @@
     - (base_effective_bootstrap_sudo_users | length) > 0
     - base_sudo_user_lookup.results is defined
 
+# Unresolved entries are still passed to gpasswd below — typo'd names will
+# fail tolerantly, and a name that becomes valid later (local user created,
+# SSSD cache populated) is picked up on the next converge without operator
+# intervention.
 - name: Warn about bootstrap sudo users that did not resolve in NSS
   ansible.builtin.debug:
     msg: >-
-      Skipping bootstrap sudo group addition for unresolved user(s):
-      {{ base_unresolved_bootstrap_sudo_users | join(', ') }}.
-      Check the spelling or AD membership, then re-run bootstrap.
+      Unresolved bootstrap sudo user(s): {{ base_unresolved_bootstrap_sudo_users | join(', ') }}.
+      gpasswd will still be attempted; verify the spelling or wait for the
+      local account / SSSD cache to populate — the next converge will
+      add the user once it resolves.
   when:
     - base_manage_bootstrap_sudo_users | bool
     - base_unresolved_bootstrap_sudo_users is defined
     - (base_unresolved_bootstrap_sudo_users | length) > 0
 
+# gpasswd runs over every requested entry, not just the resolved subset, so
+# the operator's intent is preserved across re-bootstraps and scheduled
+# converges. A "does not exist" error is tolerated — the typo path is
+# expected to fail until the operator fixes the input, and a self-heal on
+# the next converge requires the attempt to keep happening.
 - name: Add bootstrap sudo users to the local sudo group
   ansible.builtin.command:
     argv:
@@ -597,10 +607,14 @@
       - sudo
   register: base_sudo_group_membership
   changed_when: >-
-    'already a member' not in
+    base_sudo_group_membership.rc == 0
+    and 'already a member' not in
     ((base_sudo_group_membership.stdout | default(''))
     + (base_sudo_group_membership.stderr | default('')))
-  loop: "{{ base_resolved_bootstrap_sudo_users | default([]) }}"
+  failed_when: >-
+    base_sudo_group_membership.rc != 0
+    and 'does not exist' not in (base_sudo_group_membership.stderr | default(''))
+  loop: "{{ base_effective_bootstrap_sudo_users | default([]) }}"
   when:
     - base_manage_bootstrap_sudo_users | bool
-    - (base_resolved_bootstrap_sudo_users | default([]) | length) > 0
+    - (base_effective_bootstrap_sudo_users | default([]) | length) > 0

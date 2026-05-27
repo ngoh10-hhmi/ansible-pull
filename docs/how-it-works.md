@@ -59,8 +59,10 @@ The rough flow is:
 8. run the baseline playbook once
 9. obtain AD credentials, write a temporary AD-phase bootstrap state, and run
    the AD enrollment converge
-10. if optional sudo users were requested, validate them through NSS and add
-    them to the local `sudo` group during that bootstrap-only AD converge
+10. if optional sudo users were requested, pass each name to `gpasswd -a`
+    against the local `sudo` group during that bootstrap-only AD converge —
+    unresolved names log a warning but do not fail the converge, so a typo
+    or not-yet-created local user can be corrected and re-applied later
 11. rewrite the final stable bootstrap vars without one-time sudo keys
 12. enable the timer and run a final package upgrade
 

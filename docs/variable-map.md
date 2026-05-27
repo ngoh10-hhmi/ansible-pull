@@ -131,8 +131,12 @@ Notes:
 - `base_bootstrap_sudo_users` may include local users or AD-backed usernames.
 - AD-backed usernames are added to the local `sudo` group only during bootstrap,
   after the AD join and SSSD configuration steps run.
-- Entries in `base_bootstrap_sudo_users` must resolve through NSS before the
-  role will update the local `sudo` group.
+- Entries in `base_bootstrap_sudo_users` are all passed to `gpasswd`, including
+  names that did not resolve through NSS. The role logs a warning for the
+  unresolved subset and tolerates the `gpasswd: user 'X' does not exist`
+  failure so the converge still succeeds. A name that becomes valid later
+  (local user created, typo corrected, SSSD cache populated) is picked up on
+  the next scheduled converge without operator intervention.
 - Scheduled `ansible-pull` runs do not keep re-applying local sudo-group
   membership from persisted bootstrap data.
 - `base_sudo_users` and `base_local_sudo_users` may still appear on older

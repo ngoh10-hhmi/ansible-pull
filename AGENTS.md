@@ -123,8 +123,13 @@ Bootstrap flow:
 9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 
 Bootstrap-only sudo-user choices are applied during the AD enrollment
-converge after NSS/SSSD can resolve them, but they are not kept in the final
-persisted bootstrap vars for later scheduled runs.
+converge and persisted into the final `/etc/ansible/bootstrap-vars.yml`, so
+scheduled converges keep the list in sync with what the operator typed at
+bootstrap. Every requested name is passed to `gpasswd -a` regardless of
+whether NSS could resolve it at the time — unresolved names produce a
+warning and a tolerated `gpasswd: user 'X' does not exist`, and a name that
+becomes valid later (local user created, typo corrected, SSSD cache
+populated) is added automatically on the next converge.
 
 Bootstrap now treats timer enablement as required. If `ansible-pull.timer`
 cannot be enabled, bootstrap should fail loudly rather than silently
@@ -271,9 +276,16 @@ resets to that exact SHA on every run, so it never drifts forward.
 - The repo does not manage general snap refresh policy. The browser timer only targets named installed browser snaps such as Firefox.
 - The AD join path currently assumes HHMI-specific DNS, realm, and SSSD behavior. Changes there are high risk and should be treated as operational changes, not cosmetic refactors.
 - Bootstrap-only local sudo-group updates happen during bootstrap after AD/SSSD
-  is configured so requested usernames can resolve through NSS.
-- Those bootstrap sudo-user choices are intentionally not persisted for later
-  scheduled converges.
+  is configured so requested usernames have the best chance to resolve through
+  NSS, but resolution is not required — the role passes every requested name
+  to `gpasswd -a` and tolerates the `does not exist` failure so the play does
+  not abort on a typo.
+- `base_bootstrap_sudo_users` is persisted into the final
+  `/etc/ansible/bootstrap-vars.yml`, so scheduled converges re-apply the
+  list every run. This is what makes the role self-heal a name that becomes
+  valid after bootstrap (local user created, typo corrected, SSSD cache
+  populated). Operator-driven cleanup of a typo means editing the persisted
+  file or rerunning bootstrap with the corrected input.
 - The final `apt-get upgrade -y` in bootstrap is intentional because bootstrap
   is expected to run on freshly imaged HHMI systems that should be brought
   current immediately.

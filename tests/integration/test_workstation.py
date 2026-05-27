@@ -376,11 +376,12 @@ def test_bootstrap_only_sudo_users_are_added_to_local_sudo_group() -> None:
         shutil.rmtree(workspace)
 
 
-def test_unresolved_bootstrap_sudo_user_is_skipped_with_warning() -> None:
-    # An NSS-unresolvable name in base_bootstrap_sudo_users used to abort
-    # the converge. The role now warns and continues, only adding the
-    # subset that actually resolved. Assert the new behavior: pull succeeds,
-    # the typo'd user is not in the sudo group, and the warning is logged.
+def test_unresolved_bootstrap_sudo_user_is_attempted_and_tolerated() -> None:
+    # An NSS-unresolvable name in base_bootstrap_sudo_users must still be
+    # passed to gpasswd so the role self-heals on a later converge once the
+    # name becomes valid (local user created, typo corrected, SSSD cache
+    # populated). gpasswd will fail with "does not exist" today, and the
+    # role tolerates that — the converge succeeds and a warning is logged.
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-missing-"))
     username = f"missingsudo{os.getpid()}"
     log_dir = workspace / "logs"
@@ -406,8 +407,12 @@ def test_unresolved_bootstrap_sudo_user_is_skipped_with_warning() -> None:
 
         run_log = log_dir / f"ansible-pull-{current_short_hostname()}.log"
         log_text = run_log.read_text(encoding="utf-8")
-        assert "Skipping bootstrap sudo group addition" in log_text
+        # Warning must call the unresolved user out by name.
+        assert "Unresolved bootstrap sudo user(s)" in log_text
         assert username in log_text
+        # And gpasswd must have been attempted — its "does not exist" stderr
+        # is the proof the role no longer pre-filters unresolved names.
+        assert "does not exist" in log_text
     finally:
         restore_default_pull_state(workspace)
         shutil.rmtree(workspace)
