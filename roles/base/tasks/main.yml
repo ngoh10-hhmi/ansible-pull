@@ -618,3 +618,23 @@
   when:
     - base_manage_bootstrap_sudo_users | bool
     - (base_effective_bootstrap_sudo_users | default([]) | length) > 0
+
+# Ansible's command module captures gpasswd's stderr into the register but
+# does not print it when failed_when tolerates the failure. Surface those
+# tolerated failures explicitly so the per-host run log shows why a user
+# was not added — both for operator debugging and for the integration test
+# that proves the role no longer pre-filters unresolved names.
+- name: Note tolerated gpasswd failures for bootstrap sudo users
+  ansible.builtin.debug:
+    msg: >-
+      gpasswd could not add '{{ item.item }}' to the local sudo group:
+      {{ (item.stderr | default('')) | trim }}.
+      Tolerated; the role will re-attempt on the next converge.
+  loop: "{{ base_sudo_group_membership.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item | default('?') }}"
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - base_sudo_group_membership is defined
+    - base_sudo_group_membership.results is defined
+    - (item.rc | default(0)) != 0
