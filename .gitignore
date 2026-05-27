@@ -11,3 +11,4 @@ CLAUDE.md
 *.swp
 .codex
 .antigravitycli/
+.vagrant/

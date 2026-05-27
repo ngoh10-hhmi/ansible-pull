@@ -96,6 +96,36 @@ source .venv/bin/activate
 make integration
 ```
 
+## Local CI mirror via Vagrant
+
+For developers on a non-Ubuntu workstation (Fedora, Arch, macOS) the
+`integration` job in CI cannot be reproduced directly — the playbook converges
+the running host and is Ubuntu-only. A `Vagrantfile` at the repo root spins up
+disposable Ubuntu 22.04 and 24.04 VMs under libvirt, rsyncs the working tree
+in, and runs the same converge + integration pytest sequence GitHub Actions
+runs on the hosted runners.
+
+One-time host setup on Fedora:
+
+```bash
+sudo dnf install -y vagrant vagrant-libvirt libvirt
+sudo systemctl enable --now libvirtd
+```
+
+Run the local CI matrix from the repo root:
+
+```bash
+make local-integration              # both 22.04 and 24.04
+make local-integration VAGRANT_TARGET=ubuntu-22.04
+vagrant destroy -f                  # tear down
+```
+
+The VMs converge against the working tree exactly as you have it locally
+(uncommitted changes included), so this catches the same failures CI would
+catch before pushing. The branch name persisted into the in-VM
+`/etc/ansible/pull.env` defaults to whatever the local checkout is on; set
+`TEST_GIT_BRANCH=other-branch make local-integration` to override.
+
 ## Gotchas
 
 - `pre-commit` runs locally. It does not upload anything to GitHub.

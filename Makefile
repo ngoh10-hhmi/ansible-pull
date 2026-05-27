@@ -1,7 +1,7 @@
 VENV ?= .venv
 ACTIVATE = . $(VENV)/bin/activate
 
-.PHONY: setup doctor guard-venv lint unit-test test integration clean-venv
+.PHONY: setup doctor guard-venv lint unit-test test integration local-integration clean-venv
 
 guard-venv:
 	@test -f $(VENV)/bin/activate || (echo "Missing $(VENV). Run ./scripts/setup-dev.sh first." >&2; exit 1)
@@ -24,6 +24,12 @@ test:
 
 integration: guard-venv
 	$(ACTIVATE) && sudo -E env "PATH=$$PATH" python -m pytest -q tests/integration
+
+# Run the CI integration job locally in disposable Ubuntu 22.04 + 24.04
+# libvirt VMs. Requires `vagrant` and `vagrant-libvirt` on the host.
+# Pass VAGRANT_TARGET=ubuntu-22.04 (or 24.04) to run a single platform.
+local-integration:
+	vagrant up --provision $(VAGRANT_TARGET)
 
 clean-venv:
 	rm -rf $(VENV)
