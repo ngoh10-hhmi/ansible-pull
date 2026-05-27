@@ -376,14 +376,19 @@ def test_bootstrap_only_sudo_users_are_added_to_local_sudo_group() -> None:
         shutil.rmtree(workspace)
 
 
-def test_missing_bootstrap_only_sudo_user_fails_pull() -> None:
+def test_unresolved_bootstrap_sudo_user_is_skipped_with_warning() -> None:
+    # An NSS-unresolvable name in base_bootstrap_sudo_users used to abort
+    # the converge. The role now warns and continues, only adding the
+    # subset that actually resolved. Assert the new behavior: pull succeeds,
+    # the typo'd user is not in the sudo group, and the warning is logged.
     workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-sudo-missing-"))
     username = f"missingsudo{os.getpid()}"
+    log_dir = workspace / "logs"
 
     try:
         assert run_allow_failure("getent", "passwd", username).returncode != 0
 
-        configure_pull_environment(REPO_ROOT, workspace / "checkout", workspace / "logs")
+        configure_pull_environment(REPO_ROOT, workspace / "checkout", log_dir)
         append_text(
             Path("/etc/ansible/bootstrap-vars.yml"),
             (
@@ -392,8 +397,17 @@ def test_missing_bootstrap_only_sudo_user_fails_pull() -> None:
             ),
         )
 
-        with pytest.raises(subprocess.CalledProcessError):
-            run("/usr/local/sbin/run-ansible-pull")
+        run("/usr/local/sbin/run-ansible-pull")
+
+        sudo_group_members = (
+            host.check_output("getent group sudo").strip().split(":")[-1].split(",")
+        )
+        assert username not in sudo_group_members
+
+        run_log = log_dir / f"ansible-pull-{current_short_hostname()}.log"
+        log_text = run_log.read_text(encoding="utf-8")
+        assert "Skipping bootstrap sudo group addition" in log_text
+        assert username in log_text
     finally:
         restore_default_pull_state(workspace)
         shutil.rmtree(workspace)
