@@ -71,6 +71,27 @@ a single converge with `base_ad_enroll: true`. Use this when you need to
 finish or repeat the post-AD steps (timer enablement, final upgrade) after a
 partial bootstrap.
 
+## SSSD fails to start on Ubuntu 26.04
+
+Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user. If the daemon cannot
+read `/etc/krb5.keytab` or `/etc/sssd/sssd.conf`, `sssd_be` exits at startup
+and the converge fails on the `systemctl is-active sssd` check.
+
+Expected permissions after a healthy converge:
+
+```bash
+stat -c '%U:%G %a' /etc/krb5.keytab        # root:sssd 640
+stat -c '%U:%G %a' /etc/sssd/sssd.conf     # root:sssd 640
+getent group sssd                          # must exist
+```
+
+If those values are wrong, re-run `sudo /usr/local/sbin/run-ansible-pull` —
+the role re-applies them every converge. If the daemon still refuses to start,
+check `journalctl -u sssd -n 100 --no-pager` for the failing file path; the
+common culprit is a Kerberos-related file the role does not yet manage (for
+example a manually placed `/etc/sssd/conf.d/*.conf` drop-in that is still
+`root:root 0600`).
+
 ## Check timer state
 
 Verify that the pull timer is installed, enabled, and scheduled:

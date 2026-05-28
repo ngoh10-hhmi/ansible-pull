@@ -130,7 +130,17 @@ sudo /tmp/bootstrap-ubuntu.sh \
   --branch testing
 ```
 
-The bootstrap flow now persists the selected repo/branch into Ansible variables, so scheduled runs on that test machine stay on `testing` unless you intentionally re-bootstrap or change `/etc/ansible/bootstrap-vars.yml`.
+For Ubuntu 26.04 validation, use the `testing-26.04` branch (forked from `testing`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ngoh10-hhmi/ansible-pull/testing-26.04/scripts/bootstrap-ubuntu.sh -o /tmp/bootstrap-ubuntu.sh
+chmod +x /tmp/bootstrap-ubuntu.sh
+sudo /tmp/bootstrap-ubuntu.sh \
+  --repo https://github.com/ngoh10-hhmi/ansible-pull.git \
+  --branch testing-26.04
+```
+
+The bootstrap flow now persists the selected repo/branch into Ansible variables, so scheduled runs on that test machine stay on `testing` (or `testing-26.04`) unless you intentionally re-bootstrap or change `/etc/ansible/bootstrap-vars.yml`.
 
 To switch an existing machine between branches without re-bootstrap:
 

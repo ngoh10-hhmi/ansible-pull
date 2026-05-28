@@ -228,6 +228,69 @@ def test_copy_fail_kmod_mitigation_is_applied() -> None:
     )
 
 
+def _host_is_ad_joined() -> bool:
+    """Mirror the realm-list check the role uses to decide if AD is in play.
+
+    Tests that depend on post-AD-enrollment state skip when this returns False
+    so the suite stays meaningful on non-domain-joined CI hosts.
+    """
+    realm_output = host.run("realm list")
+    if realm_output.rc != 0:
+        return False
+    return "hhmi.org" in realm_output.stdout
+
+
+def _sssd_runs_as_non_root() -> bool:
+    """Feature-detect the Ubuntu 26.04 non-root SSSD mode.
+
+    Mirrors the ad_join.yml gate: the package-provisioned `sssd` group exists
+    only on releases where the daemon drops privileges.
+    """
+    return host.run("getent group sssd").rc == 0
+
+
+def test_sssd_service_is_active_after_converge() -> None:
+    if not _host_is_ad_joined():
+        pytest.skip("Host is not AD-joined; SSSD service state is not asserted.")
+    is_active = host.run("systemctl is-active sssd")
+    assert is_active.stdout.strip() == "active", (
+        f"sssd is not active after converge: rc={is_active.rc}, "
+        f"stdout={is_active.stdout!r}, stderr={is_active.stderr!r}"
+    )
+
+
+def test_machine_keytab_is_readable_by_sssd_in_non_root_mode() -> None:
+    if not _host_is_ad_joined():
+        pytest.skip("Host is not AD-joined; no /etc/krb5.keytab to inspect.")
+    keytab = host.file("/etc/krb5.keytab")
+    assert keytab.exists
+    assert keytab.user == "root"
+    if _sssd_runs_as_non_root():
+        # Ubuntu 26.04 path: SSSD runs as the unprivileged `sssd` user and
+        # needs group-read on the machine keytab to start at all.
+        assert keytab.group == "sssd"
+        assert keytab.mode == 0o640
+    else:
+        # Legacy path: SSSD still runs as root, so the realm-default 0600 is
+        # both sufficient and the tighter posture we want to preserve.
+        assert keytab.group == "root"
+        assert keytab.mode == 0o600
+
+
+def test_sssd_config_is_readable_by_sssd_in_non_root_mode() -> None:
+    if not _host_is_ad_joined():
+        pytest.skip("Host is not AD-joined; no /etc/sssd/sssd.conf to inspect.")
+    sssd_conf = host.file("/etc/sssd/sssd.conf")
+    assert sssd_conf.exists
+    assert sssd_conf.user == "root"
+    if _sssd_runs_as_non_root():
+        assert sssd_conf.group == "sssd"
+        assert sssd_conf.mode == 0o640
+    else:
+        assert sssd_conf.group == "root"
+        assert sssd_conf.mode == 0o600
+
+
 def test_managed_package_updates_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/managed-package-updates.timer")
     service = host.file("/etc/systemd/system/managed-package-updates.service")
