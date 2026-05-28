@@ -422,10 +422,15 @@ ${sudo_users_yaml}
 EOF
 }
 
+# The terminal success state deliberately omits the bootstrap sudo-user keys.
+# Adding the operator's listed users (AD and local) to the sudo group is a
+# one-shot step performed during the AD-phase converge; gpasswd makes that a
+# persistent OS-level group change, so the users stay in sudo afterward. We do
+# NOT carry the keys into the steady-state pull vars, because that would make
+# every scheduled converge re-assert the bootstrap-time list declaratively.
+# (The AD-phase state below still carries them so the enrolling converge adds
+# them once.)
 write_bootstrap_vars_final_state() {
-  local sudo_users_yaml
-  sudo_users_yaml="$(build_sudo_users_yaml)"
-
   write_bootstrap_file <<EOF
 base_ansible_pull_repo_url: "${REPO_URL}"
 base_ansible_pull_branch: "${BRANCH}"
@@ -435,7 +440,6 @@ base_ansible_pull_log_dir: "${LOG_DIR}"
 target_hostname: "${SHORT_HOSTNAME}"
 machine_type: "${MACHINE_TYPE}"
 base_ad_enroll: true
-${sudo_users_yaml}
 EOF
 }
 
@@ -587,7 +591,13 @@ join_active_directory() {
   fi
 
   while true; do
-    read -r -p "AD Admin Username (e.g. duckd-a): " ad_user
+    # A failed read means EOF: stdin is closed (non-interactive run, a pipe, or
+    # the operator pressed Ctrl-D). There is no one to reprompt, so bail rather
+    # than spin the loop forever. A blank line from a real terminal still reads
+    # successfully and falls through to the empty-username reprompt below.
+    if ! read -r -p "AD Admin Username (e.g. duckd-a): " ad_user; then
+      die "Error: no input available for AD username; aborting (non-interactive run or end of input)."
+    fi
 
     if [[ -z "${ad_user}" ]]; then
       echo "Error: AD username cannot be empty." >&2
@@ -607,7 +617,10 @@ join_active_directory() {
       fi
     fi
 
-    read -r -s -p "AD Password: " ad_password
+    if ! read -r -s -p "AD Password: " ad_password; then
+      echo "" >&2
+      die "Error: no input available for AD password; aborting (non-interactive run or end of input)."
+    fi
     echo ""
 
     if [[ -z "${ad_password}" ]]; then

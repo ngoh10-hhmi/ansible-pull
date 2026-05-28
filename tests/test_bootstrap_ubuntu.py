@@ -397,9 +397,18 @@ def _join_ad_harness(username: str) -> str:
         f"""\
         source scripts/bootstrap-ubuntu.sh
 
+        _username_reads=0
         read() {{
           local var_name="${{@: -1}}"
           if [[ "$*" == *"Username"* ]]; then
+            # Supply the username once, then simulate EOF (closed stdin) so a
+            # rejected realm reprompts exactly once and then terminates instead
+            # of looping forever. Valid-realm cases break on the first pass and
+            # never reach the second read.
+            _username_reads=$((_username_reads + 1))
+            if (( _username_reads > 1 )); then
+              return 1
+            fi
             eval "${{var_name}}='{username}'"
           elif [[ "$*" == *"Password"* ]]; then
             eval "${{var_name}}='password123'"

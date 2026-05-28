@@ -47,6 +47,19 @@ check_shellcheck() {
   esac
 }
 
+# Install a pre-push hook that runs scripts/pre-push-gate.sh. The hook is a thin
+# shim that execs the tracked script, so the gate logic stays version-controlled
+# and edits take effect without reinstalling.
+install_pre_push_gate() {
+  local hooks_dir
+  hooks_dir="$(git -C "${REPO_ROOT}" rev-parse --git-path hooks)"
+  cat >"${hooks_dir}/pre-push" <<'HOOK'
+#!/usr/bin/env bash
+exec "$(git rev-parse --show-toplevel)/scripts/pre-push-gate.sh" "$@"
+HOOK
+  chmod +x "${hooks_dir}/pre-push" "${REPO_ROOT}/scripts/pre-push-gate.sh"
+}
+
 main() {
   pick_python
   check_shellcheck
@@ -59,6 +72,8 @@ main() {
   export PRE_COMMIT_HOME="${REPO_ROOT}/.pre-commit-cache"
   export PATH="${VENV_DIR}/bin:${PATH}"
   "${VENV_DIR}/bin/pre-commit" install
+
+  install_pre_push_gate
 
   cat <<EOF
 Developer setup complete.

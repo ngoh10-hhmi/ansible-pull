@@ -13,8 +13,25 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import pytest
+
 BOOTSTRAP_VARS_PATH = Path("/etc/ansible/bootstrap-vars.yml")
 _INITIAL_BOOTSTRAP_CONTENT = ""
+
+
+def pytest_collection_modifyitems(config, items) -> None:
+    """Exempt the integration suite from the per-test timeout in pytest.ini.
+
+    That timeout is a guardrail for the fast unit tests, where a test running
+    for a minute means a hang/bug. Integration tests legitimately drive full
+    `run-ansible-pull` converges that take minutes, so a global 60s cap would
+    fail them outright. A marker value of 0 disables the timeout. We only touch
+    items under this directory so a combined `pytest` run still guards the unit
+    tests.
+    """
+    for item in items:
+        if "integration" in Path(str(item.fspath)).parts:
+            item.add_marker(pytest.mark.timeout(0))
 
 
 def _run(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

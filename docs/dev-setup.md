@@ -139,6 +139,24 @@ Each run recreates the VM from scratch to match CI's ephemeral runners. On
 failure the VM is left running so you can inspect it with
 `multipass shell ansible-pull-ci-22-04`.
 
+### Pre-push gate
+
+`scripts/setup-dev.sh` installs a `pre-push` git hook (`scripts/pre-push-gate.sh`)
+that mirrors both CI jobs locally before anything reaches the remote: it runs
+the unit tests first and, only if they pass, the full Multipass integration
+matrix. A failure aborts the push.
+
+Escape hatches when you need them:
+
+```bash
+git push --no-verify           # skip the gate entirely
+SKIP_VM_TESTS=1 git push       # unit tests only, skip the slow VM step
+MP_TARGET=22.04 git push       # gate on a single release instead of both
+```
+
+The hook is a thin shim that execs the tracked `scripts/pre-push-gate.sh`, so
+edits to the gate take effect without reinstalling.
+
 ## Gotchas
 
 - `pre-commit` runs locally. It does not upload anything to GitHub.
