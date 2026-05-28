@@ -26,10 +26,10 @@ integration: guard-venv
 	$(ACTIVATE) && sudo -E env "PATH=$$PATH" python -m pytest -q tests/integration
 
 # Run the CI integration job locally in disposable Ubuntu 22.04 + 24.04
-# libvirt VMs. Requires `vagrant` and `vagrant-libvirt` on the host.
-# Pass VAGRANT_TARGET=ubuntu-22.04 (or 24.04) to run a single platform.
+# Multipass KVM VMs. Requires `multipass` on the host (sudo snap install
+# multipass). Pass MP_TARGET=22.04 (or 24.04) to run a single release.
 local-integration:
-	vagrant up --provision $(VAGRANT_TARGET)
+	MP_TARGET="$(MP_TARGET)" ./scripts/local-ci.sh
 
 clean-venv:
 	rm -rf $(VENV)

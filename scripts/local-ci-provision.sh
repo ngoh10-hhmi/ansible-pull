@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Mirror of the GitHub Actions "integration" job, run inside a fresh
-# Vagrant-managed Ubuntu VM. Invoked by the Vagrantfile at repo root.
-# Vagrant runs shell provisioners as root, so the "sudo" wrappers CI uses
-# are unnecessary here.
+# disposable Ubuntu VM. Invoked by scripts/local-ci.sh (Multipass), which
+# runs it under `sudo`, so the "sudo" wrappers CI uses are unnecessary here.
 set -euo pipefail
 
 REPO_DIR="${REPO_DIR:-/vagrant}"
@@ -27,7 +26,7 @@ apt-get install -y python3.12 python3.12-venv
 
 cd "${REPO_DIR}"
 
-# The integration tests invoke run-ansible-pull against /vagrant as a git
+# The integration tests invoke run-ansible-pull against REPO_DIR as a git
 # remote on TEST_GIT_BRANCH (REPO_URL in pull.env, BRANCH in pull.env).
 # Without a real commit on that branch, git_sync.sh's fetch/reset/clean
 # pipeline aborts. Stage a disposable single-commit repo here, and refresh

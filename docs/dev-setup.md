@@ -96,35 +96,48 @@ source .venv/bin/activate
 make integration
 ```
 
-## Local CI mirror via Vagrant
+## Local CI mirror via Multipass
 
-For developers on a non-Ubuntu workstation (Fedora, Arch, macOS) the
-`integration` job in CI cannot be reproduced directly — the playbook converges
-the running host and is Ubuntu-only. A `Vagrantfile` at the repo root spins up
-disposable Ubuntu 22.04 and 24.04 VMs under libvirt, rsyncs the working tree
-in, and runs the same converge + integration pytest sequence GitHub Actions
-runs on the hosted runners.
+The `integration` job in CI cannot be reproduced by running pytest on your dev
+box directly — the playbook is Ubuntu-only and converges the *running host*, so
+running it locally would mutate your workstation (and your dev box may not even
+be one of the CI matrix releases). `scripts/local-ci.sh` spins up disposable
+Ubuntu 22.04 and 24.04 KVM VMs via Multipass, copies the working tree in, and
+runs the same converge + integration pytest sequence GitHub Actions runs on the
+hosted runners.
 
-One-time host setup on Fedora:
+Multipass gives real VMs (not containers), so kernel-level steps — NVIDIA
+driver pinning, the kmod mitigation, SSSD/AD enrollment — behave the same way
+they do on CI's runners.
+
+One-time host setup on Ubuntu:
 
 ```bash
-sudo dnf install -y vagrant vagrant-libvirt libvirt
-sudo systemctl enable --now libvirtd
+sudo snap install multipass
 ```
+
+(Earlier revisions of this repo used a Vagrant + libvirt mirror. Vagrant was
+dropped from the Ubuntu archive after its BSL relicense, so the local mirror
+moved to Multipass, which is native on an Ubuntu dev box.)
 
 Run the local CI matrix from the repo root:
 
 ```bash
 make local-integration              # both 22.04 and 24.04
-make local-integration VAGRANT_TARGET=ubuntu-22.04
-vagrant destroy -f                  # tear down
+make local-integration MP_TARGET=22.04
+multipass delete --purge ansible-pull-ci-22-04 ansible-pull-ci-24-04   # tear down
 ```
 
 The VMs converge against the working tree exactly as you have it locally
-(uncommitted changes included), so this catches the same failures CI would
-catch before pushing. The branch name persisted into the in-VM
+(uncommitted changes included, except `.git/` and the volatile `.venv/`,
+`.pre-commit-cache/`, `.ansible/` dirs), so this catches the same failures CI
+would catch before pushing. The branch name persisted into the in-VM
 `/etc/ansible/pull.env` defaults to whatever the local checkout is on; set
 `TEST_GIT_BRANCH=other-branch make local-integration` to override.
+
+Each run recreates the VM from scratch to match CI's ephemeral runners. On
+failure the VM is left running so you can inspect it with
+`multipass shell ansible-pull-ci-22-04`.
 
 ## Gotchas
 
