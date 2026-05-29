@@ -115,21 +115,21 @@ Bootstrap flow:
 1. `scripts/bootstrap-ubuntu.sh` installs bootstrap dependencies.
 2. It clones the repo into `/var/lib/ansible-pull`.
 3. It installs `/usr/local/sbin/run-ansible-pull` plus its shared helper libraries.
-4. It writes `/etc/ansible/pull.env` through the shared env-file helper.
-5. It prompts for hostname, machine type, and optional sudo users.
+4. It prompts for an optional Slack webhook URL (unless `--slack-webhook` was supplied; blank skips notifications) and writes `/etc/ansible/pull.env` through the shared env-file helper.
+5. It prompts for hostname, machine type, and optional sudo users, then prints a summary and asks for confirmation (answering no restarts the prompts).
 6. It checks if the host is already joined to Active Directory (via `realm list`).
 7. If not joined, it writes an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`, runs `/usr/local/sbin/run-ansible-pull`, prompts for AD credentials (stripping a trailing `@hhmi.org`/`@HHMI.ORG` realm suffix if present, and aborting if any other realm is supplied), performs the AD enrollment converge, and rewrites the final stable bootstrap vars.
 8. If already joined, it skips Phase 1 and the credential prompt, writes the final bootstrap vars directly (with `base_ad_enroll: true`), and runs a single converge.
 9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 
-Bootstrap-only sudo-user choices are applied during the AD enrollment
-converge and persisted into the final `/etc/ansible/bootstrap-vars.yml`, so
-scheduled converges keep the list in sync with what the operator typed at
-bootstrap. Every requested name is passed to `gpasswd -a` regardless of
-whether NSS could resolve it at the time — unresolved names produce a
-warning and a tolerated `gpasswd: user 'X' does not exist`, and a name that
-becomes valid later (local user created, typo corrected, SSSD cache
-populated) is added automatically on the next converge.
+Bootstrap-only sudo-user choices are applied once, during the AD enrollment
+converge: the sudo keys appear in the AD-phase `/etc/ansible/bootstrap-vars.yml`
+but are deliberately omitted from the final stable state, so scheduled converges
+do not keep re-asserting the bootstrap-time list. Adding a user to the local
+sudo group is a persistent OS-level change, so the membership remains after
+bootstrap. During that one converge every requested name is passed to
+`gpasswd -a` regardless of whether NSS could resolve it — an unresolved name
+produces a warning and a tolerated `gpasswd: user 'X' does not exist`.
 
 Bootstrap now treats timer enablement as required. If `ansible-pull.timer`
 cannot be enabled, bootstrap should fail loudly rather than silently
@@ -137,7 +137,17 @@ continuing.
 
 Bootstrap also supports optional Slack notification settings through
 `--slack-webhook` and `--slack-notify-success`, which are persisted into
-`/etc/ansible/pull.env`.
+`/etc/ansible/pull.env`. When `--slack-webhook` is not supplied, bootstrap
+prompts for the webhook URL interactively (blank skips it).
+
+Re-running bootstrap is non-destructive to operator-configured `pull.env`
+values: before parsing CLI flags it seeds settings from any existing
+`/etc/ansible/pull.env`, so precedence is CLI flag > existing value > built-in
+default. A re-run therefore preserves the Slack webhook and a previously
+selected branch/playbook unless the matching flag overrides them. Pass
+`--reset-env` to skip that seeding and rebuild `pull.env` purely from flags and
+defaults (the clean-slate repair path). This mirrors how `switch-pull-branch.sh`
+already preserves Slack values.
 
 Scheduled run flow:
 
@@ -252,9 +262,17 @@ resets to that exact SHA on every run, so it never drifts forward.
   retention advice.
 - `bootstrap-ubuntu.sh` and `switch-pull-branch.sh` log every invocation to
   syslog under tags `ansible-pull-bootstrap` and `ansible-pull-switch-branch`
-  with the invoking user (`SUDO_USER`) and arguments. Use
+  with the invoking user (`SUDO_USER`) and arguments. Secret-bearing flag
+  values (`--github-token`, `--slack-webhook`) are redacted to `***REDACTED***`
+  before logging so credentials never land in the audit trail. Use
   `journalctl -t ansible-pull-bootstrap` (or the switch-branch tag) for the
   audit trail. Best-effort: if `logger` is missing the script still runs.
+- Interactive bootstrap prompts go through the `prompt_line` helper, which
+  re-prompts on an invalid value and aborts with a clear reason on EOF (closed
+  stdin, a non-interactive run, or Ctrl-D) rather than looping forever.
+  Usernames (sudo and AD) are format-checked with `is_valid_username`, the AD
+  realm suffix is validated, and the kinit retry is capped. Preserve this
+  fail-loud, never-hang contract when adding or refactoring prompts.
 - Git checkouts are verified against the resolved expected ref after every
   `git reset --hard` via `git_verify_head_matches_ref` in `scripts/lib/git_sync.sh`.
   A partial git operation that leaves the tree on the wrong commit fails the
@@ -282,15 +300,19 @@ resets to that exact SHA on every run, so it never drifts forward.
   NSS, but resolution is not required — the role passes every requested name
   to `gpasswd -a` and tolerates the `does not exist` failure so the play does
   not abort on a typo.
-- `base_bootstrap_sudo_users` is persisted into the final
-  `/etc/ansible/bootstrap-vars.yml`, so scheduled converges re-apply the
-  list every run. This is what makes the role self-heal a name that becomes
-  valid after bootstrap (local user created, typo corrected, SSSD cache
-  populated). Operator-driven cleanup of a typo means editing the persisted
-  file or rerunning bootstrap with the corrected input.
+- `base_bootstrap_sudo_users` is written into the AD-phase
+  `/etc/ansible/bootstrap-vars.yml` but omitted from the final stable state, so
+  the sudo-group add happens once during bootstrap rather than being
+  re-asserted on every scheduled converge. The group membership persists at the
+  OS level afterward. To change who has bootstrap sudo later, manage the account
+  directly or re-run bootstrap with the corrected input. (Keep the keys out of
+  the final state in `write_bootstrap_vars_final_state`.)
 - The final `apt-get upgrade -y` in bootstrap is intentional because bootstrap
   is expected to run on freshly imaged HHMI systems that should be brought
-  current immediately.
+  current immediately. It is non-fatal: by that point AD enrollment, the timer,
+  and the final bootstrap-vars state are all in place, so a transient
+  mirror/network failure during the upgrade warns rather than failing the whole
+  bootstrap.
 - `base_sudo_users` and `base_local_sudo_users` may still exist on older hosts
   as legacy state, but scheduled converges should not keep re-applying them.
 - AD-backed sudo access is still also modeled through sudoers entries and groups in `roles/base/tasks/ad_join.yml` when `ad_sudo_group` is used.

@@ -542,6 +542,7 @@ def test_main_skips_enrollment_if_already_joined() -> None:
 
             # Mock all setup functions
             audit_log_invocation() { :; }
+            preload_existing_pull_env() { :; }
             parse_args() { :; }
             validate_prerequisites() { :; }
             install_bootstrap_dependencies() { :; }
@@ -613,6 +614,7 @@ def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
 
             # Mock all setup functions
             audit_log_invocation() { :; }
+            preload_existing_pull_env() { :; }
             parse_args() { :; }
             validate_prerequisites() { :; }
             install_bootstrap_dependencies() { :; }
@@ -985,6 +987,128 @@ def test_join_active_directory_aborts_after_max_kinit_failures() -> None:
     assert "failed AD authentication attempts" in result.stderr
     # 5-attempt cap: attempts 1-4 print a retry line, the 5th aborts.
     assert result.stderr.count("kinit failed (attempt") == 4
+
+
+def test_preload_existing_pull_env_adopts_existing_values(tmp_path: Path) -> None:
+    env_file = tmp_path / "pull.env"
+    env_file.write_text(
+        "REPO_URL=https://example.invalid/repo.git\n"
+        "BRANCH=testing\n"
+        "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/EXISTING\n",
+        encoding="utf-8",
+    )
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(env_file))}
+            preload_existing_pull_env
+            echo "BRANCH=${{BRANCH}} WEBHOOK=${{SLACK_WEBHOOK_URL}}"
+            """
+        )
+    )
+    assert "BRANCH=testing" in result.stdout
+    assert "WEBHOOK=https://hooks.slack.com/services/EXISTING" in result.stdout
+
+
+def test_cli_args_override_preloaded_pull_env(tmp_path: Path) -> None:
+    env_file = tmp_path / "pull.env"
+    env_file.write_text("BRANCH=testing\n", encoding="utf-8")
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(env_file))}
+            # Mirror main()'s order: preload first, then parse CLI on top.
+            preload_existing_pull_env
+            parse_args --repo https://example.invalid/repo.git --branch main
+            echo "BRANCH=${{BRANCH}}"
+            """
+        )
+    )
+    # Explicit --branch wins over the preloaded value.
+    assert "BRANCH=main" in result.stdout
+
+
+def test_reset_env_flag_skips_preload_and_rebuilds_from_defaults(tmp_path: Path) -> None:
+    env_file = tmp_path / "pull.env"
+    env_file.write_text("BRANCH=testing\n", encoding="utf-8")
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(env_file))}
+            # Mirror main()'s gate: --reset-env present -> skip the preload.
+            if ! args_contain_reset_env --repo https://example.invalid/repo.git --reset-env; then
+              preload_existing_pull_env
+            fi
+            parse_args --repo https://example.invalid/repo.git --reset-env
+            echo "BRANCH=${{BRANCH}} RESET=${{RESET_ENV}}"
+            """
+        )
+    )
+    # Existing BRANCH=testing is ignored; the built-in default wins.
+    assert "BRANCH=main" in result.stdout
+    assert "RESET=true" in result.stdout
+
+
+def test_default_rerun_preserves_existing_when_no_reset_flag(tmp_path: Path) -> None:
+    env_file = tmp_path / "pull.env"
+    env_file.write_text("BRANCH=testing\n", encoding="utf-8")
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(env_file))}
+            if ! args_contain_reset_env --repo https://example.invalid/repo.git; then
+              preload_existing_pull_env
+            fi
+            parse_args --repo https://example.invalid/repo.git
+            echo "BRANCH=${{BRANCH}} RESET=${{RESET_ENV}}"
+            """
+        )
+    )
+    # No --reset-env: the existing branch is preserved.
+    assert "BRANCH=testing" in result.stdout
+    assert "RESET=false" in result.stdout
+
+
+def test_preload_existing_pull_env_tolerates_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist.env"
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(missing))}
+            preload_existing_pull_env
+            echo "BRANCH=${{BRANCH}}"
+            """
+        )
+    )
+    # Falls through to the built-in default with no error.
+    assert "BRANCH=main" in result.stdout
+
+
+def test_preloaded_webhook_is_preserved_when_prompt_is_skipped(tmp_path: Path) -> None:
+    env_file = tmp_path / "pull.env"
+    env_file.write_text(
+        "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/KEEP\n",
+        encoding="utf-8",
+    )
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source scripts/bootstrap-ubuntu.sh
+            PULL_ENV_FILE={shlex.quote(str(env_file))}
+            preload_existing_pull_env
+            # On a re-run the operator passes nothing; the prompt should see the
+            # preloaded value and skip, leaving the webhook intact.
+            prompt_slack_webhook </dev/null
+            echo "WEBHOOK=${{SLACK_WEBHOOK_URL}}"
+            """
+        )
+    )
+    assert "WEBHOOK=https://hooks.slack.com/services/KEEP" in result.stdout
 
 
 def test_run_final_upgrade_is_non_fatal_on_apt_failure() -> None:

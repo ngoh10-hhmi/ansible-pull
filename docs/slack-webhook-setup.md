@@ -39,6 +39,10 @@ sudo ./bootstrap-ubuntu.sh \
   --slack-webhook "https://hooks.slack.com/services/..."
 ```
 
+If you omit `--slack-webhook`, bootstrap prompts for the webhook URL
+interactively; leave the prompt blank to skip notifications. A non-blank entry
+must be an `https://` URL or it is re-prompted.
+
 If you also want success notifications, opt in explicitly:
 ```bash
 sudo ./bootstrap-ubuntu.sh \
@@ -56,6 +60,20 @@ sudoedit /etc/ansible/pull.env
 
 The runtime file is now written through a shared helper that shell-escapes its
 values. If you hand-edit it, keep the existing shell-style `KEY=value` format.
+
+Or set just the one key without opening an editor (a standard Slack webhook URL
+has no shell-special characters, so it sources cleanly):
+```bash
+sudo sed -i '/^SLACK_WEBHOOK_URL=/d' /etc/ansible/pull.env
+echo 'SLACK_WEBHOOK_URL=https://hooks.slack.com/services/...' | sudo tee -a /etc/ansible/pull.env >/dev/null
+```
+
+Either way, scheduled converges keep this line intact — the role manages only
+its own keys in `pull.env` via `lineinfile` and never rewrites operator-added
+values. You do **not** need to re-run bootstrap to add a webhook (a re-run
+re-converges the whole machine). And if you do re-run bootstrap for other
+reasons, it now preserves an existing `SLACK_WEBHOOK_URL` unless you pass
+`--reset-env` (which rebuilds `pull.env` from flags/defaults).
 
 ### Option C: Operator-Run Backfill from the AD-Protected Share
 

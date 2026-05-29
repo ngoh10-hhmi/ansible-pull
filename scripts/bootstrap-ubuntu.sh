@@ -9,6 +9,7 @@ Usage:
                       [--github-user <username>]
                       [--github-token <token> | --github-token-file <path>]
                       [--slack-webhook <url>] [--slack-notify-success <true|false>]
+                      [--reset-env]
 
 Example:
   sudo ./bootstrap-ubuntu.sh \
@@ -38,6 +39,12 @@ When Slack webhook notifications are configured, failed runs can include the
 wrapper phase, last detected Ansible task, and a short error excerpt. If
 --slack-webhook is not passed, the script prompts for the webhook URL during
 bootstrap; leave it blank to skip notifications.
+
+Re-running bootstrap preserves values already in /etc/ansible/pull.env (such as
+the Slack webhook and the configured branch) unless you override them with the
+matching flag, so a re-run will not silently wipe operator-configured settings.
+Pass --reset-env to ignore the existing file and rebuild pull.env purely from
+the supplied flags and defaults (a clean-slate repair path).
 EOF
 }
 
@@ -120,11 +127,13 @@ audit_log_invocation() {
 REPO_URL=""
 BRANCH="main"
 BRANCH_PROVIDED="false"
+RESET_ENV="false"
 COMMIT=""
 PLAYBOOK="playbooks/workstation.yml"
 DEST="/var/lib/ansible-pull"
 LOG_DIR="/var/log/ansible-pull"
 BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
+PULL_ENV_FILE="/etc/ansible/pull.env"
 INSTALLED_LIB_DIR="/usr/local/lib/ansible-pull"
 GITHUB_USER=""
 GITHUB_TOKEN=""
@@ -143,6 +152,34 @@ AD_CONVERGE_SUCCEEDED="false"
 BOOTSTRAP_LIBS_LOADED="false"
 GIT_CREDENTIALS_WRITTEN="false"
 GIT_CREDENTIALS_FILE="/root/.git-credentials-ansible-pull"
+
+# True when --reset-env appears anywhere in the argument list. We need this
+# answer before parse_args runs, because the preload below must happen ahead of
+# argument parsing to keep CLI flags authoritative.
+args_contain_reset_env() {
+  local arg
+  for arg in "$@"; do
+    [[ "${arg}" == "--reset-env" ]] && return 0
+  done
+  return 1
+}
+
+# Seed the pull.env-backed settings from any existing /etc/ansible/pull.env
+# before CLI parsing, so a bootstrap re-run preserves operator-configured values
+# (notably SLACK_WEBHOOK_URL, and a previously selected BRANCH/PLAYBOOK) unless
+# they are explicitly overridden on the command line. Combined with the default
+# assignments above and parse_args below, the precedence becomes:
+#   CLI flag  >  existing pull.env value  >  built-in default
+# A first-time bootstrap has no file and falls straight through to the defaults;
+# a malformed file is tolerated (we keep the defaults rather than abort).
+#
+# Skipped entirely when --reset-env is passed, restoring the legacy behavior of
+# rebuilding pull.env from CLI flags and defaults (a clean-slate repair path).
+preload_existing_pull_env() {
+  [[ -r "${PULL_ENV_FILE}" ]] || return 0
+  # shellcheck disable=SC1090
+  source "${PULL_ENV_FILE}" 2>/dev/null || true
+}
 
 # Parse CLI arguments into global script settings.
 parse_args() {
@@ -194,6 +231,10 @@ parse_args() {
         [[ -n "${2:-}" ]] || die "--slack-notify-success requires a value."
         SLACK_NOTIFY_SUCCESS="${2:-}"
         shift 2
+        ;;
+      --reset-env)
+        RESET_ENV="true"
+        shift
         ;;
       -h|--help)
         usage
@@ -338,8 +379,8 @@ write_pull_environment() {
   fi
 
   : "${SLACK_WEBHOOK_URL}" "${SLACK_NOTIFY_SUCCESS}"
-  write_pull_env_file /etc/ansible/pull.env
-  load_env_file /etc/ansible/pull.env
+  write_pull_env_file "${PULL_ENV_FILE}"
+  load_env_file "${PULL_ENV_FILE}"
   validate_pull_env
 }
 
@@ -887,7 +928,16 @@ run_final_upgrade() {
 main() {
   trap cleanup_bootstrap_state_on_exit EXIT
   audit_log_invocation "ansible-pull-bootstrap" "$@"
+  # Preserve existing pull.env values across re-runs unless --reset-env asks for
+  # the legacy clean-slate rebuild. Detected via a pre-scan because the preload
+  # must precede parse_args to keep CLI flags authoritative.
+  if ! args_contain_reset_env "$@"; then
+    preload_existing_pull_env
+  fi
   parse_args "$@"
+  if [[ "${RESET_ENV}" == "true" ]]; then
+    echo "Rebuilding ${PULL_ENV_FILE} from flags and defaults (--reset-env); existing values are not preserved." >&2
+  fi
   validate_prerequisites
   install_bootstrap_dependencies
   prepare_runtime_directories

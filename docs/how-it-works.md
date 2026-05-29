@@ -53,8 +53,8 @@ The rough flow is:
 2. create `/etc/ansible` and local runtime directories
 3. clone this repo into `/var/lib/ansible-pull`
 4. install `/usr/local/sbin/run-ansible-pull` plus its shared helper libraries
-5. write `/etc/ansible/pull.env`
-6. prompt for hostname, machine type, and optional sudo users
+5. prompt for an optional Slack webhook URL (unless `--slack-webhook` was passed; blank skips it) and write `/etc/ansible/pull.env`
+6. prompt for hostname, machine type, and optional sudo users, then show a summary and confirm
 7. write an initial `/etc/ansible/bootstrap-vars.yml` with `base_ad_enroll: false`
 8. run the baseline playbook once
 9. obtain AD credentials, write a temporary AD-phase bootstrap state, and run
@@ -71,6 +71,13 @@ If the host is already joined to Active Directory (e.g. during a re-run of the b
 The key idea is that bootstrap writes machine-local values into files under
 `/etc/ansible/`. Those files persist on the workstation and are reused on later
 scheduled runs.
+
+Because those files persist, re-running bootstrap preserves the values already
+in `/etc/ansible/pull.env` (such as the Slack webhook and the selected branch):
+it seeds settings from the existing file before parsing CLI flags, so
+precedence is CLI flag > existing value > built-in default. A re-run will not
+silently wipe an operator-configured webhook. Pass `--reset-env` to ignore the
+existing file and rebuild `pull.env` purely from flags and defaults.
 
 The optional bootstrap sudo-user list is the exception: it is only written for
 the AD enrollment converge so SSSD/NSS can resolve those names first, and it is

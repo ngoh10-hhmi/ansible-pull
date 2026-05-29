@@ -82,6 +82,10 @@ Notes:
   a full commit SHA for rollback or pinning.
 - The runtime copy in `/etc/ansible/pull.env` is written through a shared
   helper that shell-escapes values before runtime scripts source them.
+- Re-running `bootstrap-ubuntu.sh` preserves values already in
+  `/etc/ansible/pull.env` (including `SLACK_WEBHOOK_URL` and the selected
+  branch/playbook) unless overridden by the matching flag; `--reset-env`
+  rebuilds the file from flags and defaults instead.
 - `switch-pull-branch.sh` updates these persisted values when you change a
   machine from `main` to `testing`, switch back, or pin to a commit SHA.
 

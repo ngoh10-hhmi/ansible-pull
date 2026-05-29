@@ -103,7 +103,9 @@ sudo /tmp/bootstrap-ubuntu.sh \
 ```
 
 The bootstrap script now performs the initial clone itself, so you only need this one file on a fresh machine.
-During bootstrap it will ask for machine type, an AD username plus hidden password for the required `hhmi.org` domain join, and optional usernames that should be added to the local `sudo` group after the join completes. The AD username can be entered with or without the `@hhmi.org` realm suffix (case-insensitive); bootstrap strips it before calling `kinit`, and rejects any other `@realm` to avoid silently joining the wrong domain. If the machine is already domain-joined (e.g. bootstrap is being re-run), the script detects this, skips the AD credential prompt and the reboot warning, and performs a single converge with `base_ad_enroll: true`.
+During bootstrap it will ask for machine type, an AD username plus hidden password for the required `hhmi.org` domain join, optional usernames that should be added to the local `sudo` group after the join completes, and an optional Slack webhook URL (unless you pass `--slack-webhook`; leave the prompt blank to skip). It then shows a summary of the machine-identity choices and asks you to confirm. The AD username can be entered with or without the `@hhmi.org` realm suffix (case-insensitive); bootstrap strips it before calling `kinit`, and rejects any other `@realm` to avoid silently joining the wrong domain. If the machine is already domain-joined (e.g. bootstrap is being re-run), the script detects this, skips the AD credential prompt and the reboot warning, and performs a single converge with `base_ad_enroll: true`.
+
+Re-running bootstrap preserves values already in `/etc/ansible/pull.env` (the Slack webhook and the selected branch/playbook) unless you override them with the matching flag, so a re-run will not silently wipe operator-configured settings. Pass `--reset-env` to rebuild `pull.env` from flags and defaults instead.
 
 If you later make the repo private, the same script supports a local read-only GitHub credential on the workstation. That credential stays on the machine and does not live in this repo.
 

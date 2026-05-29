@@ -71,6 +71,14 @@ a single converge with `base_ad_enroll: true`. Use this when you need to
 finish or repeat the post-AD steps (timer enablement, final upgrade) after a
 partial bootstrap.
 
+A re-run also preserves operator-set values already in `/etc/ansible/pull.env`
+(the Slack webhook, and the selected branch/playbook) unless you override them
+with the matching flag — so it will not wipe a configured webhook. Pass
+`--reset-env` if you instead want bootstrap to rebuild `pull.env` from flags and
+defaults (a clean-slate repair). Note a re-run still re-converges the whole
+machine; to only add a webhook, edit `/etc/ansible/pull.env` directly (see the
+Slack webhook guide) rather than re-running bootstrap.
+
 ## SSSD fails to start on Ubuntu 26.04
 
 Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user. If the daemon cannot
