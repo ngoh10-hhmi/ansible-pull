@@ -45,6 +45,31 @@ die() {
   exit 1
 }
 
+# Read a single line of operator input into a named variable, failing loudly on
+# EOF. A `read` returns non-zero when stdin is closed — a non-interactive run, a
+# pipe with no more data, or the operator pressing Ctrl-D. Reprompt loops that
+# ignore that status spin forever, so every interactive prompt funnels through
+# here to turn "no input at all" into a clear abort with a reason. A blank line
+# typed at a real terminal still reads successfully; callers decide whether an
+# empty value is acceptable.
+#
+# Usage: prompt_line <label> <var-name> <prompt-text> [extra read flags...]
+#   label       human-readable field name, used in the abort message
+#   var-name    name of the variable to populate
+#   prompt-text shown to the operator (passed to read -p)
+#   extra flags forwarded to read (e.g. -s for a hidden password)
+prompt_line() {
+  local label="$1" var_name="$2" prompt="$3"
+  shift 3
+
+  # Reading into a variable whose name is held in ${var_name} is intentional;
+  # SC2229 assumes a literal name was meant.
+  # shellcheck disable=SC2229
+  if ! read -r "$@" -p "${prompt}" "${var_name}"; then
+    die "Error: reached end of input while reading ${label}; aborting (non-interactive run or Ctrl-D)."
+  fi
+}
+
 # Record the invoking user and arguments to syslog so a fleet-wide audit can
 # attribute bootstrap runs to a person rather than just the timer-driven
 # convergence stream. Best-effort: if logger is missing we silently skip
@@ -513,6 +538,21 @@ is_valid_short_hostname() {
   [[ "${hostname}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,13}[A-Za-z0-9])?$ ]]
 }
 
+# Validate a username's *format* only — not whether it resolves in NSS/SSSD.
+# Accepts the shapes Linux and AD sAMAccountName use in practice: a leading
+# letter or underscore, then letters, digits, dot, hyphen, or underscore, up to
+# 32 characters. This rejects empty input, embedded spaces, and shell
+# metacharacters while still allowing names that cannot resolve yet — existence
+# is deliberately tolerated downstream (the role re-attempts gpasswd on later
+# converges), so we only guard against malformed entries here.
+is_valid_username() {
+  local name="${1:-}"
+
+  [[ -n "${name}" ]] || return 1
+  [[ ${#name} -le 32 ]] || return 1
+  [[ "${name}" =~ ^[A-Za-z_][A-Za-z0-9._-]*$ ]]
+}
+
 is_already_joined_to_ad() {
   if command -v realm >/dev/null 2>&1 && realm list | grep -q "hhmi.org"; then
     return 0
@@ -520,59 +560,122 @@ is_already_joined_to_ad() {
   return 1
 }
 
-# Prompt for machine identity metadata used by the Ansible role.
+# Prompt for machine identity metadata used by the Ansible role. The whole set
+# of prompts is collected, summarized, and confirmed; answering "no" at the
+# confirmation restarts the prompts so a mistyped-but-valid value can be fixed.
 prompt_machine_identity() {
+  while true; do
+    prompt_short_hostname
+    prompt_machine_type
+    prompt_sudo_users
+
+    if confirm_machine_identity; then
+      break
+    fi
+    echo "Restarting machine identity prompts." >&2
+  done
+}
+
+prompt_short_hostname() {
   local current_short_hostname
   current_short_hostname="$(hostname -s 2>/dev/null || true)"
 
   while true; do
     if [[ -n "${current_short_hostname}" ]]; then
-      read -r -p "Enter short hostname (max 15 chars, without .hhmi.org) [${current_short_hostname}]: " SHORT_HOSTNAME
+      prompt_line "the short hostname" SHORT_HOSTNAME \
+        "Enter short hostname (max 15 chars, without .hhmi.org) [${current_short_hostname}]: "
       SHORT_HOSTNAME="${SHORT_HOSTNAME:-${current_short_hostname}}"
     else
-      read -r -p "Enter short hostname (max 15 chars, without .hhmi.org): " SHORT_HOSTNAME
+      prompt_line "the short hostname" SHORT_HOSTNAME \
+        "Enter short hostname (max 15 chars, without .hhmi.org): "
     fi
 
     if [[ ${#SHORT_HOSTNAME} -gt 15 ]]; then
-      echo "Error: Hostname exceeds 15 characters. Please try again."
+      echo "Error: Hostname exceeds 15 characters. Please try again." >&2
     elif [[ -z "${SHORT_HOSTNAME}" ]]; then
-      echo "Error: Hostname cannot be empty."
+      echo "Error: Hostname cannot be empty." >&2
     elif ! is_valid_short_hostname "${SHORT_HOSTNAME}"; then
-      echo "Error: Hostname must use only letters, numbers, or internal hyphens."
+      echo "Error: Hostname must use only letters, numbers, or internal hyphens." >&2
     else
       break
     fi
   done
+}
 
+prompt_machine_type() {
   while true; do
-    read -r -p "Machine type (laptop/desktop): " MACHINE_TYPE
+    prompt_line "the machine type" MACHINE_TYPE "Machine type (laptop/desktop): "
     if [[ "${MACHINE_TYPE}" == "laptop" || "${MACHINE_TYPE}" == "desktop" ]]; then
       break
     else
-      echo "Error: Please enter either 'laptop' or 'desktop'."
+      echo "Error: Please enter either 'laptop' or 'desktop'." >&2
     fi
   done
-
-  prompt_sudo_users
 }
 
 # Prompt for optional usernames that should be added to the local sudo group
-# during bootstrap after NSS/SSSD can resolve them.
+# during bootstrap after NSS/SSSD can resolve them. Re-prompts the whole list
+# if any entry is not a valid username format, naming the offending token(s).
 prompt_sudo_users() {
-  local sudo_users_input
-  local sanitized_input
-  local user_name
+  local sudo_users_input sanitized_input user_name
+  local invalid_users
 
-  read -r -p "Users to add to the local sudo group during bootstrap after join (comma-separated, AD usernames are okay, leave blank for none): " sudo_users_input
+  while true; do
+    prompt_line "the sudo user list" sudo_users_input \
+      "Users to add to the local sudo group during bootstrap after join (comma-separated, AD usernames are okay, leave blank for none): "
 
-  if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
-    return
+    # A blank or whitespace-only answer means "no sudo users" — a valid choice.
+    if [[ -z "${sudo_users_input//[[:space:]]/}" ]]; then
+      SUDO_USERS=()
+      return
+    fi
+
+    sanitized_input="${sudo_users_input//,/ }"
+    SUDO_USERS=()
+    invalid_users=()
+    for user_name in ${sanitized_input}; do
+      if is_valid_username "${user_name}"; then
+        SUDO_USERS+=("${user_name}")
+      else
+        invalid_users+=("${user_name}")
+      fi
+    done
+
+    if [[ ${#invalid_users[@]} -eq 0 ]]; then
+      return
+    fi
+
+    echo "Error: invalid username(s): ${invalid_users[*]}. Use only letters, digits, '.', '-', '_'; start with a letter or '_'; max 32 chars. Please re-enter the list." >&2
+    SUDO_USERS=()
+  done
+}
+
+# Summarize the collected machine identity and ask the operator to confirm.
+# Returns 0 to proceed, 1 to restart the prompts.
+confirm_machine_identity() {
+  local reply sudo_summary
+
+  if [[ ${#SUDO_USERS[@]} -eq 0 ]]; then
+    sudo_summary="(none)"
+  else
+    sudo_summary="${SUDO_USERS[*]}"
   fi
 
-  sanitized_input="${sudo_users_input//,/ }"
+  {
+    echo ""
+    echo "Please confirm these bootstrap settings:"
+    echo "  Short hostname : ${SHORT_HOSTNAME}"
+    echo "  Machine type   : ${MACHINE_TYPE}"
+    echo "  Sudo users     : ${sudo_summary}"
+  } >&2
 
-  for user_name in ${sanitized_input}; do
-    SUDO_USERS+=("${user_name}")
+  while true; do
+    prompt_line "the confirmation" reply "Proceed with these settings? [y/n]: "
+    case "${reply,,}" in
+      y | yes) return 0 ;;
+      n | no) return 1 ;;
+      *) echo "Error: please answer 'y' or 'n'." >&2 ;;
+    esac
   done
 }
 
@@ -595,9 +698,7 @@ join_active_directory() {
     # the operator pressed Ctrl-D). There is no one to reprompt, so bail rather
     # than spin the loop forever. A blank line from a real terminal still reads
     # successfully and falls through to the empty-username reprompt below.
-    if ! read -r -p "AD Admin Username (e.g. duckd-a): " ad_user; then
-      die "Error: no input available for AD username; aborting (non-interactive run or end of input)."
-    fi
+    prompt_line "the AD username" ad_user "AD Admin Username (e.g. duckd-a): "
 
     if [[ -z "${ad_user}" ]]; then
       echo "Error: AD username cannot be empty." >&2
@@ -617,10 +718,13 @@ join_active_directory() {
       fi
     fi
 
-    if ! read -r -s -p "AD Password: " ad_password; then
-      echo "" >&2
-      die "Error: no input available for AD password; aborting (non-interactive run or end of input)."
+    # Reject malformed usernames up front rather than feeding them to kinit.
+    if ! is_valid_username "${ad_user}"; then
+      echo "Error: '${ad_user}' is not a valid username (letters, digits, '.', '-', '_'; start with a letter or '_'; max 32 chars). Please try again." >&2
+      continue
     fi
+
+    prompt_line "the AD password" ad_password "AD Password: " -s
     echo ""
 
     if [[ -z "${ad_password}" ]]; then

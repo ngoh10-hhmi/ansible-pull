@@ -671,3 +671,168 @@ def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
     # Verify that reboot warning is printed
     assert "PRINT_REBOOT_WARNING" in result.stdout
 
+
+def test_is_valid_username_accepts_expected_values() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            for name in alice duckd-a john_doe _svc b2 user.name a-b-c; do
+              is_valid_username "$name" || echo "REJECTED:$name"
+            done
+            echo DONE
+            """
+        )
+    )
+    assert "REJECTED" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_is_valid_username_rejects_invalid_values() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            long="$(printf 'a%.0s' {1..33})"
+            for name in "" "1abc" "bad name" 'a;b' 'a$(x)' '../etc' "$long"; do
+              if is_valid_username "$name"; then echo "ACCEPTED:$name"; fi
+            done
+            echo DONE
+            """
+        )
+    )
+    assert "ACCEPTED" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_prompt_machine_identity_happy_path() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            hostname() { echo ignored-default; }
+            prompt_machine_identity <<'INPUT'
+            my-host
+            desktop
+            alice, bob
+            y
+            INPUT
+            echo "HOST=$SHORT_HOSTNAME TYPE=$MACHINE_TYPE SUDO=${SUDO_USERS[*]}"
+            """
+        )
+    )
+    assert "HOST=my-host TYPE=desktop SUDO=alice bob" in result.stdout
+
+
+def test_prompt_machine_identity_aborts_on_eof() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            hostname() { echo ignored-default; }
+            prompt_machine_identity </dev/null
+            """
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "reached end of input while reading the short hostname" in result.stderr
+
+
+def test_prompt_machine_type_reprompts_on_invalid() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            prompt_machine_type <<'INPUT'
+            server
+            laptop
+            INPUT
+            echo "TYPE=$MACHINE_TYPE"
+            """
+        )
+    )
+    assert "'laptop' or 'desktop'" in result.stderr
+    assert "TYPE=laptop" in result.stdout
+
+
+def test_prompt_sudo_users_blank_means_none() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SUDO_USERS=("stale")
+            prompt_sudo_users <<'INPUT'
+
+            INPUT
+            echo "COUNT=${#SUDO_USERS[@]}"
+            """
+        )
+    )
+    assert "COUNT=0" in result.stdout
+
+
+def test_prompt_sudo_users_reprompts_on_invalid_username() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            prompt_sudo_users <<'INPUT'
+            bad name!
+            alice,bob
+            INPUT
+            echo "SUDO=${SUDO_USERS[*]}"
+            """
+        )
+    )
+    assert "invalid username" in result.stderr
+    assert "SUDO=alice bob" in result.stdout
+
+
+def test_prompt_machine_identity_restarts_when_not_confirmed() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            hostname() { echo ignored-default; }
+            prompt_machine_identity <<'INPUT'
+            first-host
+            desktop
+
+            n
+            second-host
+            laptop
+
+            y
+            INPUT
+            echo "HOST=$SHORT_HOSTNAME TYPE=$MACHINE_TYPE"
+            """
+        )
+    )
+    assert "Restarting machine identity prompts" in result.stderr
+    assert "HOST=second-host TYPE=laptop" in result.stdout
+
+
+def test_confirm_machine_identity_aborts_on_eof() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SHORT_HOSTNAME=h
+            MACHINE_TYPE=laptop
+            SUDO_USERS=()
+            confirm_machine_identity </dev/null
+            """
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "reached end of input while reading the confirmation" in result.stderr
+
+
+def test_join_active_directory_rejects_invalid_username_format() -> None:
+    result = run_bash(_join_ad_harness("bad name!"), check=False)
+    assert result.returncode != 0
+    assert "not a valid username" in result.stderr
+    assert "KINIT_PRINCIPAL:" not in result.stdout
+
