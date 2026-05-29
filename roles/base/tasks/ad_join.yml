@@ -70,11 +70,18 @@
     insertafter: '^\[General\]'
 
 # Ubuntu 26.04 ships SSSD running as the unprivileged `sssd` user rather than
-# root. Detect that mode by checking for the package-provisioned `sssd` group:
-# when it exists, the daemon needs group-read access to the machine keytab and
-# its config. On older releases the group is absent and we keep the legacy
-# root-only permissions.
-- name: Detect non-root SSSD via sssd group presence
+# root. Only that release gets group-read permissions for the machine keytab and
+# SSSD config; older releases keep the legacy root-only permissions even if an
+# `sssd` group exists locally.
+- name: Record whether SSSD should use Ubuntu 26.04 non-root permissions
+  ansible.builtin.set_fact:
+    base_sssd_runs_as_non_root: >-
+      {{
+        ansible_facts['distribution'] == 'Ubuntu'
+        and ansible_facts['distribution_version'] is version('26.04', '==')
+      }}
+
+- name: Confirm sssd group exists for Ubuntu 26.04 non-root SSSD
   ansible.builtin.command:
     argv:
       - getent
@@ -82,27 +89,21 @@
       - sssd
   register: base_sssd_group_check
   changed_when: false
-  # getent returns 2 when the key is missing; only fail on real errors.
-  failed_when: base_sssd_group_check.rc not in [0, 2]
+  failed_when: base_sssd_group_check.rc != 0
   check_mode: false
+  when: base_sssd_runs_as_non_root | bool
 
-- name: Record whether SSSD runs as a non-root service
-  ansible.builtin.set_fact:
-    base_sssd_runs_as_non_root: "{{ base_sssd_group_check.rc == 0 }}"
-
-# realm/adcli write /etc/krb5.keytab as root:root 0600. When SSSD runs
-# unprivileged it cannot read that and fails to start, so widen the group
-# to `sssd` with mode 0640. Runs every converge so the perms stay correct
-# even after a future keytab-rewriting operation (rejoin, machine-account
-# password rotation, etc.).
-- name: Allow non-root SSSD to read AD machine keytab
+# realm/adcli write /etc/krb5.keytab as root:root 0600. Ubuntu 26.04 needs
+# root:sssd 0640 because SSSD runs unprivileged there. Apply this every converge
+# so a future keytab-rewriting operation (rejoin, machine-account password
+# rotation, etc.) cannot leave the host with permissions for the wrong mode.
+- name: Set AD machine keytab permissions for SSSD service mode
   ansible.builtin.file:
     path: /etc/krb5.keytab
     state: file
     owner: root
-    group: sssd
-    mode: "0640"
-  when: base_sssd_runs_as_non_root | bool
+    group: "{{ 'sssd' if base_sssd_runs_as_non_root else 'root' }}"
+    mode: "{{ '0640' if base_sssd_runs_as_non_root else '0600' }}"
 
 - name: Deploy SSSD Configuration
   ansible.builtin.template:

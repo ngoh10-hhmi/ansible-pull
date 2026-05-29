@@ -81,9 +81,12 @@ Slack webhook guide) rather than re-running bootstrap.
 
 ## SSSD fails to start on Ubuntu 26.04
 
-Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user. If the daemon cannot
-read `/etc/krb5.keytab` or `/etc/sssd/sssd.conf`, `sssd_be` exits at startup
-and the converge fails on the `systemctl is-active sssd` check.
+Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user. The role applies the
+group-readable SSSD permissions only when the host reports Ubuntu 26.04; older
+Ubuntu releases keep `root:root 0600` even if an `sssd` group exists locally.
+If the daemon cannot read `/etc/krb5.keytab` or `/etc/sssd/sssd.conf`,
+`sssd_be` exits at startup and the converge fails on the `systemctl is-active
+sssd` check.
 
 Expected permissions after a healthy converge:
 

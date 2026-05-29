@@ -240,13 +240,18 @@ def _host_is_ad_joined() -> bool:
     return "hhmi.org" in realm_output.stdout
 
 
-def _sssd_runs_as_non_root() -> bool:
-    """Feature-detect the Ubuntu 26.04 non-root SSSD mode.
+def _host_is_ubuntu_2604() -> bool:
+    """Mirror the role gate for Ubuntu 26.04-only SSSD permissions."""
+    os_release_check = (
+        'test "$(. /etc/os-release && printf \'%s:%s\' "$ID" "$VERSION_ID")" '
+        "= ubuntu:26.04"
+    )
+    return host.run(os_release_check).rc == 0
 
-    Mirrors the ad_join.yml gate: the package-provisioned `sssd` group exists
-    only on releases where the daemon drops privileges.
-    """
-    return host.run("getent group sssd").rc == 0
+
+def _sssd_runs_as_non_root() -> bool:
+    """Ubuntu 26.04 is the only release where this role widens SSSD perms."""
+    return _host_is_ubuntu_2604()
 
 
 def test_sssd_service_is_active_after_converge() -> None:
@@ -268,11 +273,11 @@ def test_machine_keytab_is_readable_by_sssd_in_non_root_mode() -> None:
     if _sssd_runs_as_non_root():
         # Ubuntu 26.04 path: SSSD runs as the unprivileged `sssd` user and
         # needs group-read on the machine keytab to start at all.
+        assert host.run("getent group sssd").rc == 0
         assert keytab.group == "sssd"
         assert keytab.mode == 0o640
     else:
-        # Legacy path: SSSD still runs as root, so the realm-default 0600 is
-        # both sufficient and the tighter posture we want to preserve.
+        # Legacy path: keep root-only permissions even if the sssd group exists.
         assert keytab.group == "root"
         assert keytab.mode == 0o600
 
@@ -284,6 +289,7 @@ def test_sssd_config_is_readable_by_sssd_in_non_root_mode() -> None:
     assert sssd_conf.exists
     assert sssd_conf.user == "root"
     if _sssd_runs_as_non_root():
+        assert host.run("getent group sssd").rc == 0
         assert sssd_conf.group == "sssd"
         assert sssd_conf.mode == 0o640
     else:
