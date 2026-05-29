@@ -551,6 +551,7 @@ def test_main_skips_enrollment_if_already_joined() -> None:
             source_checkout_libs() { :; }
             install_runtime_support() { :; }
             write_pull_environment() { :; }
+            prompt_slack_webhook() { :; }
             prompt_machine_identity() { :; }
 
             # Mock AD check to return true (already joined)
@@ -621,6 +622,7 @@ def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
             source_checkout_libs() { :; }
             install_runtime_support() { :; }
             write_pull_environment() { :; }
+            prompt_slack_webhook() { :; }
             prompt_machine_identity() { :; }
 
             # Mock AD check to return false (not joined)
@@ -835,4 +837,167 @@ def test_join_active_directory_rejects_invalid_username_format() -> None:
     assert result.returncode != 0
     assert "not a valid username" in result.stderr
     assert "KINIT_PRINCIPAL:" not in result.stdout
+
+
+def test_audit_log_invocation_redacts_secrets() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            logger() { echo "LOGGED: $*"; }
+            command() { if [[ "$2" == "logger" ]]; then return 0; fi; builtin command "$@"; }
+            audit_log_invocation tag --repo https://example.invalid \
+              --github-token ghp_TOPSECRET \
+              --slack-webhook https://hooks.slack.com/services/SECRETPATH
+            """
+        )
+    )
+    assert "ghp_TOPSECRET" not in result.stdout
+    assert "SECRETPATH" not in result.stdout
+    assert "***REDACTED***" in result.stdout
+    assert "--repo https://example.invalid" in result.stdout
+
+
+def test_is_plausible_repo_url() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            for u in https://github.com/x/y.git http://h/r git@github.com:x/y.git \
+                     ssh://h/r file:///srv/r /srv/local ./rel ../rel; do
+              is_plausible_repo_url "$u" || echo "REJECTED:$u"
+            done
+            for u in "" "not a url" "ftp://h/r" "has space"; do
+              if is_plausible_repo_url "$u"; then echo "ACCEPTED:$u"; fi
+            done
+            echo DONE
+            """
+        )
+    )
+    assert "REJECTED" not in result.stdout
+    assert "ACCEPTED" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_is_valid_webhook_url() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            is_valid_webhook_url "https://hooks.slack.com/services/T/B/X" || echo "REJECTED:good"
+            for u in "" "http://insecure" "https://has space" "ftp://x"; do
+              if is_valid_webhook_url "$u"; then echo "ACCEPTED:$u"; fi
+            done
+            echo DONE
+            """
+        )
+    )
+    assert "REJECTED" not in result.stdout
+    assert "ACCEPTED" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_parse_args_rejects_invalid_slack_webhook() -> None:
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/bootstrap-ubuntu.sh",
+                "parse_args --repo https://example.invalid --slack-webhook http://insecure",
+            ]
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "must be an https:// URL" in result.stderr
+
+
+def test_prompt_slack_webhook_blank_skips() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SLACK_WEBHOOK_URL=""
+            prompt_slack_webhook <<'INPUT'
+
+            INPUT
+            echo "WEBHOOK=[${SLACK_WEBHOOK_URL}]"
+            """
+        )
+    )
+    assert "WEBHOOK=[]" in result.stdout
+
+
+def test_prompt_slack_webhook_accepts_and_reprompts() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SLACK_WEBHOOK_URL=""
+            prompt_slack_webhook <<'INPUT'
+            http://insecure
+            https://hooks.slack.com/services/ok
+            INPUT
+            echo "WEBHOOK=[${SLACK_WEBHOOK_URL}]"
+            """
+        )
+    )
+    assert "does not look like a webhook URL" in result.stderr
+    assert "WEBHOOK=[https://hooks.slack.com/services/ok]" in result.stdout
+
+
+def test_prompt_slack_webhook_respects_cli_value() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SLACK_WEBHOOK_URL="https://hooks.slack.com/services/preset"
+            prompt_slack_webhook </dev/null
+            echo "WEBHOOK=[${SLACK_WEBHOOK_URL}]"
+            """
+        )
+    )
+    assert "WEBHOOK=[https://hooks.slack.com/services/preset]" in result.stdout
+
+
+def test_join_active_directory_aborts_after_max_kinit_failures() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            read() {
+              local var_name="${@: -1}"
+              if [[ "$*" == *"Username"* ]]; then
+                eval "${var_name}='duckd-a'"
+              elif [[ "$*" == *"Password"* ]]; then
+                eval "${var_name}='pw'"
+              fi
+            }
+            kinit() { return 1; }
+            command() { if [[ "$2" == "kinit" ]]; then return 0; fi; builtin command "$@"; }
+            write_bootstrap_vars_ad_phase_state() { :; }
+            /usr/local/sbin/run-ansible-pull() { :; }
+            join_active_directory
+            """
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "failed AD authentication attempts" in result.stderr
+    # 5-attempt cap: attempts 1-4 print a retry line, the 5th aborts.
+    assert result.stderr.count("kinit failed (attempt") == 4
+
+
+def test_run_final_upgrade_is_non_fatal_on_apt_failure() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            apt-get() { return 1; }
+            run_final_upgrade
+            echo "CONTINUED rc=$?"
+            """
+        )
+    )
+    assert "final package upgrade did not complete" in result.stderr
+    assert "CONTINUED rc=0" in result.stdout
 

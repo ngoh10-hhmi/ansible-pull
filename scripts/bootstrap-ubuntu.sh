@@ -35,7 +35,9 @@ will prompt for an AD username and hidden password before the domain-join
 convergence run.
 
 When Slack webhook notifications are configured, failed runs can include the
-wrapper phase, last detected Ansible task, and a short error excerpt.
+wrapper phase, last detected Ansible task, and a short error excerpt. If
+--slack-webhook is not passed, the script prompts for the webhook URL during
+bootstrap; leave it blank to skip notifications.
 EOF
 }
 
@@ -70,17 +72,47 @@ prompt_line() {
   fi
 }
 
+# Echo the argument list with the values of secret-bearing flags replaced by a
+# placeholder, so the audit log never persists a token or webhook URL. Handles
+# both "--flag value" and "--flag=value" forms.
+redact_sensitive_args() {
+  local out=() redact_next="false" arg
+  for arg in "$@"; do
+    if [[ "${redact_next}" == "true" ]]; then
+      out+=("***REDACTED***")
+      redact_next="false"
+      continue
+    fi
+    case "${arg}" in
+      --github-token | --slack-webhook)
+        out+=("${arg}")
+        redact_next="true"
+        ;;
+      --github-token=* | --slack-webhook=*)
+        out+=("${arg%%=*}=***REDACTED***")
+        ;;
+      *)
+        out+=("${arg}")
+        ;;
+    esac
+  done
+  printf '%s' "${out[*]}"
+}
+
 # Record the invoking user and arguments to syslog so a fleet-wide audit can
 # attribute bootstrap runs to a person rather than just the timer-driven
-# convergence stream. Best-effort: if logger is missing we silently skip
-# rather than block bootstrap.
+# convergence stream. Secret-bearing flag values are redacted first so the
+# audit trail never leaks a token or webhook URL. Best-effort: if logger is
+# missing we silently skip rather than block bootstrap.
 audit_log_invocation() {
   local tag="$1"
   shift
   local invoker="${SUDO_USER:-${USER:-unknown}}"
+  local redacted_args
+  redacted_args="$(redact_sensitive_args "$@")"
 
   if command -v logger >/dev/null 2>&1; then
-    logger -t "${tag}" "invoked by ${invoker} args=$*" || true
+    logger -t "${tag}" "invoked by ${invoker} args=${redacted_args}" || true
   fi
 }
 
@@ -154,6 +186,7 @@ parse_args() {
         ;;
       --slack-webhook)
         [[ -n "${2:-}" ]] || die "--slack-webhook requires a value."
+        is_valid_webhook_url "${2}" || die "--slack-webhook must be an https:// URL."
         SLACK_WEBHOOK_URL="${2:-}"
         shift 2
         ;;
@@ -179,6 +212,29 @@ is_valid_commit_sha() {
   local ref="${1:-}"
 
   [[ "${ref}" =~ ^[0-9A-Fa-f]{40}$ ]]
+}
+
+# Sanity-check a repo argument: a recognized git URL scheme (https, ssh, git,
+# file), an scp-style git@host:path, or a local path. Deliberately permissive —
+# it rejects empty input and embedded whitespace so an obviously malformed value
+# fails with a clear reason here rather than as a cryptic git error, without
+# second-guessing exotic-but-valid remotes.
+is_plausible_repo_url() {
+  local url="${1:-}"
+
+  [[ -n "${url}" ]] || return 1
+  [[ "${url}" != *[[:space:]]* ]] || return 1
+  [[ "${url}" =~ ^(https?://|ssh://|git://|file://|git@|/|\.{1,2}/) ]]
+}
+
+# A webhook URL must be an https URL with no embedded whitespace. Used for both
+# the --slack-webhook flag and the interactive prompt.
+is_valid_webhook_url() {
+  local url="${1:-}"
+
+  [[ -n "${url}" ]] || return 1
+  [[ "${url}" != *[[:space:]]* ]] || return 1
+  [[ "${url}" =~ ^https://[^[:space:]]+$ ]]
 }
 
 normalize_pull_ref_args() {
@@ -209,6 +265,10 @@ validate_prerequisites() {
     echo "--repo is required." >&2
     usage
     exit 1
+  fi
+
+  if ! is_plausible_repo_url "${REPO_URL}"; then
+    die "--repo does not look like a git URL or path: ${REPO_URL}"
   fi
 
   if [[ ! -f /etc/os-release ]]; then
@@ -679,6 +739,34 @@ confirm_machine_identity() {
   done
 }
 
+# Optionally collect a Slack webhook URL interactively when one was not supplied
+# via --slack-webhook. Blank is allowed — the operator may not know the URL, in
+# which case run notifications are simply left unconfigured. A non-blank entry
+# must look like an https URL and is re-prompted otherwise.
+prompt_slack_webhook() {
+  # Respect a value already provided (and validated) on the command line.
+  if [[ -n "${SLACK_WEBHOOK_URL}" ]]; then
+    return
+  fi
+
+  local webhook_input
+  while true; do
+    prompt_line "the Slack webhook URL" webhook_input \
+      "Slack webhook URL for run notifications (optional; leave blank if unknown): "
+
+    if [[ -z "${webhook_input//[[:space:]]/}" ]]; then
+      return
+    fi
+
+    if is_valid_webhook_url "${webhook_input}"; then
+      SLACK_WEBHOOK_URL="${webhook_input}"
+      return
+    fi
+
+    echo "Error: that does not look like a webhook URL (expected https://...). Please re-enter or leave blank to skip." >&2
+  done
+}
+
 # Perform the first configuration convergence.
 run_initial_configuration() {
   /usr/local/sbin/run-ansible-pull
@@ -688,6 +776,8 @@ run_initial_configuration() {
 join_active_directory() {
   local ad_user
   local ad_password
+  local kinit_failures=0
+  local max_kinit_failures=5
 
   if ! command -v kinit >/dev/null 2>&1; then
     die "Error: kinit was not found after baseline setup. Verify krb5-user is installed."
@@ -742,7 +832,11 @@ join_active_directory() {
     fi
 
     unset ad_password
-    echo "kinit failed. Check the username/password and try again, or press Ctrl-C to cancel." >&2
+    kinit_failures=$((kinit_failures + 1))
+    if [[ "${kinit_failures}" -ge "${max_kinit_failures}" ]]; then
+      die "Error: ${max_kinit_failures} failed AD authentication attempts; aborting. Re-run bootstrap once the credentials are confirmed."
+    fi
+    echo "kinit failed (attempt ${kinit_failures}/${max_kinit_failures}). Check the username/password and try again, or press Ctrl-C to cancel." >&2
   done
 
   BOOTSTRAP_PHASE="ad_phase"
@@ -773,8 +867,13 @@ print_ad_reboot_warning() {
 # freshly imaged HHMI systems this workflow targets.
 run_final_upgrade() {
   echo "Running final package upgrade"
-  apt-get update
-  apt-get upgrade -y
+  # Non-fatal: by this point AD enrollment, the pull timer, and the final
+  # bootstrap-vars state are all in place, so a transient mirror/network
+  # hiccup during the freshness upgrade should not fail the whole bootstrap.
+  # Surface a clear warning and let the operator re-run apt later.
+  if ! { apt-get update && apt-get upgrade -y; }; then
+    echo "Warning: final package upgrade did not complete cleanly. The machine is already enrolled and the ansible-pull timer is active; run 'sudo apt-get update && sudo apt-get upgrade' later to finish." >&2
+  fi
 }
 
 # Main orchestration flow for first-time workstation bootstrap.
@@ -796,9 +895,11 @@ main() {
   sync_repository_checkout
   source_checkout_libs
   install_runtime_support
-  write_pull_environment
 
   echo "--- Initial Workstation Config ---"
+  prompt_slack_webhook
+  write_pull_environment
+
   prompt_machine_identity
 
   local was_already_joined="false"
