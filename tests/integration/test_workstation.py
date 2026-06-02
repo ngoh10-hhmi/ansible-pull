@@ -240,18 +240,20 @@ def _host_is_ad_joined() -> bool:
     return "hhmi.org" in realm_output.stdout
 
 
-def _host_is_ubuntu_2604() -> bool:
-    """Mirror the role gate for Ubuntu 26.04-only SSSD permissions."""
+def _host_is_ubuntu_2604_or_newer() -> bool:
+    """Mirror the role gate: Ubuntu 26.04 and newer use non-root SSSD perms."""
+    # dpkg --compare-versions gives the same >= semantics as the role's
+    # `version('26.04', '>=')` test, including point releases (26.04.1, …).
     os_release_check = (
-        'test "$(. /etc/os-release && printf \'%s:%s\' "$ID" "$VERSION_ID")" '
-        "= ubuntu:26.04"
+        '. /etc/os-release && [ "$ID" = ubuntu ] && '
+        'dpkg --compare-versions "$VERSION_ID" ge 26.04'
     )
     return host.run(os_release_check).rc == 0
 
 
 def _sssd_runs_as_non_root() -> bool:
-    """Ubuntu 26.04 is the only release where this role widens SSSD perms."""
-    return _host_is_ubuntu_2604()
+    """Ubuntu 26.04+ is where this role widens SSSD perms to root:sssd 0640."""
+    return _host_is_ubuntu_2604_or_newer()
 
 
 def test_sssd_service_is_active_after_converge() -> None:

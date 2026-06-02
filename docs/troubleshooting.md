@@ -79,11 +79,13 @@ defaults (a clean-slate repair). Note a re-run still re-converges the whole
 machine; to only add a webhook, edit `/etc/ansible/pull.env` directly (see the
 Slack webhook guide) rather than re-running bootstrap.
 
-## SSSD fails to start on Ubuntu 26.04
+## SSSD fails to start on Ubuntu 26.04+
 
-Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user. The role applies the
-group-readable SSSD permissions only when the host reports Ubuntu 26.04; older
-Ubuntu releases keep `root:root 0600` even if an `sssd` group exists locally.
+Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user, and later releases keep
+that model. The role applies the group-readable SSSD permissions when the host
+reports Ubuntu 26.04 or newer (a `>=` version test, so point releases like
+26.04.1 are covered); older Ubuntu releases keep `root:root 0600` even if an
+`sssd` group exists locally.
 If the daemon cannot read `/etc/krb5.keytab` or `/etc/sssd/sssd.conf`,
 `sssd_be` exits at startup and the converge fails on the `systemctl is-active
 sssd` check.

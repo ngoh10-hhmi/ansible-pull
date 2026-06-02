@@ -69,19 +69,21 @@
     line: 'Domain = hhmi.org'
     insertafter: '^\[General\]'
 
-# Ubuntu 26.04 ships SSSD running as the unprivileged `sssd` user rather than
-# root. Only that release gets group-read permissions for the machine keytab and
-# SSSD config; older releases keep the legacy root-only permissions even if an
-# `sssd` group exists locally.
-- name: Record whether SSSD should use Ubuntu 26.04 non-root permissions
+# Ubuntu 26.04 introduced SSSD running as the unprivileged `sssd` user rather
+# than root, and later releases keep that model. Ubuntu 26.04 and newer get
+# group-read permissions for the machine keytab and SSSD config; older releases
+# keep the legacy root-only permissions even if an `sssd` group exists locally.
+# The gate is `>=` (not `==`) so point releases like 26.04.1 and future
+# releases (26.10, 28.04, …) are covered without another code change.
+- name: Record whether SSSD should use Ubuntu 26.04+ non-root permissions
   ansible.builtin.set_fact:
     base_sssd_runs_as_non_root: >-
       {{
         ansible_facts['distribution'] == 'Ubuntu'
-        and ansible_facts['distribution_version'] is version('26.04', '==')
+        and ansible_facts['distribution_version'] is version('26.04', '>=')
       }}
 
-- name: Confirm sssd group exists for Ubuntu 26.04 non-root SSSD
+- name: Confirm sssd group exists for Ubuntu 26.04+ non-root SSSD
   ansible.builtin.command:
     argv:
       - getent
@@ -93,7 +95,7 @@
   check_mode: false
   when: base_sssd_runs_as_non_root | bool
 
-# realm/adcli write /etc/krb5.keytab as root:root 0600. Ubuntu 26.04 needs
+# realm/adcli write /etc/krb5.keytab as root:root 0600. Ubuntu 26.04+ needs
 # root:sssd 0640 because SSSD runs unprivileged there. Apply this every converge
 # so a future keytab-rewriting operation (rejoin, machine-account password
 # rotation, etc.) cannot leave the host with permissions for the wrong mode.
@@ -120,7 +122,7 @@
 - name: Restart SSSD before applying sudo access changes
   ansible.builtin.meta: flush_handlers
 
-# A wrong keytab/config perm on 26.04 surfaces as sssd_be exiting at startup,
+# A wrong keytab/config perm on 26.04+ surfaces as sssd_be exiting at startup,
 # which would otherwise only be discovered when a user tries to log in. Fail
 # the converge here instead.
 - name: Verify SSSD is active after restart
