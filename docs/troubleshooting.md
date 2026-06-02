@@ -146,11 +146,36 @@ The upgrade helper now guards against this automatically: after upgrading any
 package listed in `base_managed_package_updates_restart_verify` (SSSD by
 default), it does one clean `systemctl restart` plus an `is-active` check once
 the transaction settles, and exits non-zero if the service does not come back.
-A genuine failure therefore fails `managed-package-updates.service` and is also
-caught by the next converge's `Verify SSSD is active after restart` task, which
-fails the run and triggers a Slack alert. To extend the guard to another
-auth-critical service, add an entry to
+A genuine failure therefore fails `managed-package-updates.service`, which
+fires the `OnFailure` Slack notifier (see below), and is also caught by the next
+converge's `Verify SSSD is active after restart` task. To extend the guard to
+another auth-critical service, add an entry to
 `base_managed_package_updates_restart_verify`.
+
+## Slack alerts for failed maintenance units
+
+The timer-driven maintenance units (`managed-package-updates`,
+`browser-package-updates`, `apt-refresh`) run outside the `run-ansible-pull`
+wrapper, so their failures do not go through the wrapper's Slack path. Each one
+instead carries `OnFailure=ansible-pull-slack-notify@%n.service`, which runs
+`/usr/local/sbin/notify-unit-failure-slack` with the failed unit name. The
+notifier reads `SLACK_WEBHOOK_URL` from `/etc/ansible/pull.env` (the same
+webhook the pull wrapper uses) and posts the unit status plus a short journal
+excerpt. With no webhook configured it is a silent no-op.
+
+Verify or exercise it:
+
+```bash
+# Confirm the wiring and the helper:
+systemctl cat managed-package-updates.service | grep OnFailure
+test -x /usr/local/sbin/notify-unit-failure-slack && echo helper-present
+
+# Dry-run the notification for a unit (posts to Slack if a webhook is set):
+sudo /usr/local/sbin/notify-unit-failure-slack managed-package-updates.service
+```
+
+To turn the feature off, set `base_maintenance_failure_slack_notify_enabled:
+false` (drops the `OnFailure` wiring on the next converge).
 
 ## Check timer state
 

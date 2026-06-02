@@ -261,6 +261,19 @@
     group: root
     mode: "0755"
 
+- name: Install maintenance-failure Slack notifier helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/notify-unit-failure-slack.sh'
+      ) }}
+    dest: /usr/local/sbin/notify-unit-failure-slack
+    owner: root
+    group: root
+    mode: "0755"
+  when: base_maintenance_failure_slack_notify_enabled
+
 - name: Install managed baseline package update list
   ansible.builtin.copy:
     dest: /etc/ansible/managed-package-updates.list
@@ -302,6 +315,16 @@
     group: root
     mode: "0644"
   notify: Reload systemd
+
+- name: Install maintenance-failure Slack notifier unit template
+  ansible.builtin.template:
+    src: ansible-pull-slack-notify@.service.j2
+    dest: /etc/systemd/system/ansible-pull-slack-notify@.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+  when: base_maintenance_failure_slack_notify_enabled
 
 - name: Install managed package update service unit
   ansible.builtin.template:

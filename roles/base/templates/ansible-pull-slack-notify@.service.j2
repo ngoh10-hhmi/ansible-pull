@@ -1,0 +1,9 @@
+[Unit]
+Description=Send a Slack alert for failed maintenance unit %i
+# No OnFailure here: a notifier that fails must not recurse.
+
+[Service]
+Type=oneshot
+# %i is the failed unit's name, passed in by OnFailure=...@%n.service.
+ExecStart=/usr/local/sbin/notify-unit-failure-slack %i
+TimeoutStartSec=1m

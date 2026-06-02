@@ -316,6 +316,9 @@ def test_managed_package_updates_timer_is_installed() -> None:
     # half-swapped restart cannot silently leave AD login broken.
     assert service.contains("--restart-verify sssd:sssd,sssd-common,sssd-tools")
     assert service.contains("TimeoutStartSec=30m")
+    # A failed managed upgrade runs outside the pull wrapper, so it must alert
+    # via the dedicated OnFailure notifier instead of dying silently.
+    assert service.contains("OnFailure=ansible-pull-slack-notify@%n.service")
     assert package_list.exists
     assert package_list.contains("^ca-certificates$")
     assert package_list.contains("^vim$")
@@ -342,6 +345,29 @@ def test_browser_package_updates_timer_is_installed() -> None:
     assert snap_list.exists
     assert snap_list.contains("^firefox$")
     assert host.run("systemctl is-enabled browser-package-updates.timer").stdout.strip() == "enabled"
+
+
+def test_maintenance_failure_slack_notifier_is_installed() -> None:
+    helper = host.file("/usr/local/sbin/notify-unit-failure-slack")
+    unit = host.file("/etc/systemd/system/ansible-pull-slack-notify@.service")
+
+    assert helper.exists
+    assert helper.mode == 0o755
+    assert unit.exists
+    assert unit.contains("ExecStart=/usr/local/sbin/notify-unit-failure-slack %i")
+    # The notifier itself must not carry an OnFailure directive or it could
+    # recurse. Anchor to line start so the explanatory comment that mentions
+    # "OnFailure=" in prose does not trip this check.
+    assert not unit.contains("^OnFailure=")
+    # The maintenance units that run outside the pull wrapper opt into it.
+    for service_name in (
+        "managed-package-updates.service",
+        "browser-package-updates.service",
+        "apt-refresh.service",
+    ):
+        service = host.file(f"/etc/systemd/system/{service_name}")
+        assert service.exists
+        assert service.contains("OnFailure=ansible-pull-slack-notify@%n.service")
 
 
 def test_legacy_apt_maintenance_timer_is_removed() -> None:

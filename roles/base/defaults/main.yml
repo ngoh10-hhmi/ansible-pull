@@ -69,6 +69,14 @@ base_browser_package_updates_enabled: true
 base_browser_package_updates_timer_on_calendar: "*-*-* 04:00:00"
 base_browser_package_updates_randomized_delay_sec: "15m"
 
+# Post a Slack alert when a timer-driven maintenance unit fails. These units
+# (managed-package-updates, browser-package-updates, apt-refresh) run outside
+# the ansible-pull wrapper, so without this their failures only land in the
+# journal. The alert reuses SLACK_WEBHOOK_URL from /etc/ansible/pull.env and is
+# a no-op when no webhook is configured. Set to false to remove the OnFailure
+# wiring entirely (the notifier helper and template unit then go unused).
+base_maintenance_failure_slack_notify_enabled: true
+
 base_workstation_enable_unattended_upgrades: true
 # Disable APT::Periodic list refresh because apt-refresh.timer owns that path.
 base_workstation_update_package_lists_days: 0

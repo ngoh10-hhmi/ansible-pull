@@ -2,6 +2,9 @@
 Description=Upgrade installed browser packages
 After=network-online.target
 Wants=network-online.target
+{% if base_maintenance_failure_slack_notify_enabled | default(true) %}
+OnFailure=ansible-pull-slack-notify@%n.service
+{% endif %}
 
 [Service]
 Type=oneshot
