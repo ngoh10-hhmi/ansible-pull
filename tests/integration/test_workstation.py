@@ -309,6 +309,10 @@ def test_managed_package_updates_timer_is_installed() -> None:
     assert service.contains(
         "ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list"
     )
+    # SSSD's package set restarts the daemon mid-transaction on upgrade; the
+    # helper must be told to cleanly restart and verify it afterward so a
+    # half-swapped restart cannot silently leave AD login broken.
+    assert service.contains("--restart-verify sssd:sssd,sssd-common,sssd-tools")
     assert service.contains("TimeoutStartSec=30m")
     assert package_list.exists
     assert package_list.contains("^ca-certificates$")

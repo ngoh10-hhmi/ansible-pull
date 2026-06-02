@@ -49,6 +49,22 @@ base_managed_package_updates_enabled: true
 base_managed_package_updates_timer_on_calendar: "*-*-* 03:00:00"
 base_managed_package_updates_randomized_delay_sec: "15m"
 
+# Critical services to cleanly restart-and-verify after a managed-baseline
+# upgrade. dpkg may restart a long-running daemon mid-transaction against
+# half-swapped plugins and leave it dead with no clean restart afterward (seen
+# with sssd on Ubuntu 26.04: the AD provider .so was mismatched at the
+# dpkg-triggered restart, sssd_be exited, and AD login broke until a manual
+# restart hours later). For each entry, the upgrade helper does one clean
+# restart plus an is-active check once the transaction settles -- but only when
+# one of its trigger_packages was actually upgraded -- and fails the run if the
+# service does not come back, so the failure is recorded rather than silent.
+base_managed_package_updates_restart_verify:
+  - service: sssd
+    trigger_packages:
+      - sssd
+      - sssd-common
+      - sssd-tools
+
 base_browser_package_updates_enabled: true
 base_browser_package_updates_timer_on_calendar: "*-*-* 04:00:00"
 base_browser_package_updates_randomized_delay_sec: "15m"

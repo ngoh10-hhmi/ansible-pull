@@ -103,6 +103,53 @@ common culprit is a Kerberos-related file the role does not yet manage (for
 example a manually placed `/etc/sssd/conf.d/*.conf` drop-in that is still
 `root:root 0600`).
 
+## SSSD left dead after a managed package upgrade
+
+The daily `managed-package-updates.timer` runs
+`upgrade-installed-apt-packages` against `base_workstation_base_packages`,
+which includes `sssd`, `sssd-common`, and `sssd-tools`. When an SSSD security
+update lands, dpkg restarts the daemon **mid-transaction** — while its provider
+plugins and helper binaries (`sssd-ad`, the `ldap_child` executable) are only
+half-swapped. That restart loads a mismatched shared object and `sssd_be`
+exits:
+
+```
+sss_atomic_read_s() failed … Module [ad] constructor failed [5]: Input/output error
+Unable to load target [id] [80]: Accessing a corrupted shared library
+sssd: Exiting the SSSD. Could not restart critical service [hhmi.org].
+```
+
+Nothing in dpkg retries the restart afterward, so SSSD stays down — and AD
+users cannot log in — until the daemon is restarted cleanly against the
+now-consistent binaries.
+
+The signature is distinctive: SSSD failed during a `*-updates`/`-security`
+package upgrade window (~03:00), file permissions on `/etc/krb5.keytab` and
+`/etc/sssd/sssd.conf` are correct, and a plain `sudo systemctl restart sssd`
+fixes it with no config change. Confirm the upgrade with:
+
+```bash
+grep -iE 'sssd|libsss' /var/log/dpkg.log* | grep "$(date +%F)"
+journalctl --since today --no-pager | grep -iE 'managed-package-updates|Could not restart critical'
+```
+
+Immediate recovery:
+
+```bash
+sudo systemctl restart sssd
+systemctl is-active sssd
+```
+
+The upgrade helper now guards against this automatically: after upgrading any
+package listed in `base_managed_package_updates_restart_verify` (SSSD by
+default), it does one clean `systemctl restart` plus an `is-active` check once
+the transaction settles, and exits non-zero if the service does not come back.
+A genuine failure therefore fails `managed-package-updates.service` and is also
+caught by the next converge's `Verify SSSD is active after restart` task, which
+fails the run and triggers a Slack alert. To extend the guard to another
+auth-critical service, add an entry to
+`base_managed_package_updates_restart_verify`.
+
 ## Check timer state
 
 Verify that the pull timer is installed, enabled, and scheduled:

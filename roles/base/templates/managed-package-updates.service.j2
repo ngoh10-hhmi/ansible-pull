@@ -5,5 +5,5 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list
+ExecStart=/usr/local/sbin/upgrade-installed-apt-packages --label managed-baseline --list-file /etc/ansible/managed-package-updates.list{% for rv in base_managed_package_updates_restart_verify | default([]) %} --restart-verify {{ rv.service }}:{{ rv.trigger_packages | join(',') }}{% endfor +%}
 TimeoutStartSec=30m
