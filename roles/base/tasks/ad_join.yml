@@ -106,6 +106,7 @@
     owner: root
     group: "{{ 'sssd' if base_sssd_runs_as_non_root else 'root' }}"
     mode: "{{ '0640' if base_sssd_runs_as_non_root else '0600' }}"
+  notify: Restart SSSD
 
 - name: Deploy SSSD Configuration
   ansible.builtin.template:

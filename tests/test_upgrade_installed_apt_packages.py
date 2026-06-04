@@ -149,6 +149,72 @@ def test_restart_verify_skips_malformed_spec_without_colon() -> None:
     assert "UNEXPECTED systemctl" not in result.stderr
 
 
+def test_run_upgrade_restarts_when_watched_trigger_dependency_changes(
+    tmp_path: Path,
+) -> None:
+    package_list = tmp_path / "managed-package-updates.list"
+    package_list.write_text("sssd\n", encoding="utf-8")
+
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source {HELPER}
+            LABEL=managed-baseline
+            LIST_FILE={shlex.quote(str(package_list))}
+            RESTART_VERIFY_SPECS=("sssd:sssd,libpam-sss")
+            APT_INSTALL_DONE=0
+
+            dpkg-query() {{
+              local package="${{@: -1}}"
+              case "$*" in
+                *'${{Status}}'*)
+                  case "${{package}}" in
+                    sssd|libpam-sss) echo "install ok installed"; return 0 ;;
+                    *) return 1 ;;
+                  esac
+                  ;;
+                *'${{Version}}'*)
+                  case "${{package}}" in
+                    sssd) echo "1.0"; return 0 ;;
+                    libpam-sss)
+                      if [[ "${{APT_INSTALL_DONE}}" == 1 ]]; then
+                        echo "2.0"
+                      else
+                        echo "1.0"
+                      fi
+                      return 0
+                      ;;
+                    *) return 1 ;;
+                  esac
+                  ;;
+              esac
+            }}
+
+            apt-cache() {{ echo "  Candidate: 1.0"; }}
+            apt-get() {{
+              case "$1" in
+                update) echo "apt update"; return 0 ;;
+                install) APT_INSTALL_DONE=1; echo "apt install $*"; return 0 ;;
+              esac
+            }}
+            systemctl() {{
+              case "$1" in
+                restart) echo "restart $2"; return 0 ;;
+                is-active) return 0 ;;
+              esac
+            }}
+
+            run_upgrade
+            """
+        )
+    )
+
+    assert "apt install install -y --only-upgrade" in result.stdout
+    assert "Critical service sssd had upgraded packages" in result.stdout
+    assert "restart sssd" in result.stdout
+    assert "sssd is active after the post-upgrade restart" in result.stdout
+
+
 def test_read_requested_packages_skips_comments_and_blanks(tmp_path: Path) -> None:
     package_list = tmp_path / "managed-package-updates.list"
     package_list.write_text(

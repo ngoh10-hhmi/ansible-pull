@@ -142,15 +142,16 @@ sudo systemctl restart sssd
 systemctl is-active sssd
 ```
 
-The upgrade helper now guards against this automatically: after upgrading any
-package listed in `base_managed_package_updates_restart_verify` (SSSD by
-default), it does one clean `systemctl restart` plus an `is-active` check once
-the transaction settles, and exits non-zero if the service does not come back.
-A genuine failure therefore fails `managed-package-updates.service`, which
-fires the `OnFailure` Slack notifier (see below), and is also caught by the next
-converge's `Verify SSSD is active after restart` task. To extend the guard to
-another auth-critical service, add an entry to
-`base_managed_package_updates_restart_verify`.
+The upgrade helper now guards against this automatically: before the apt
+transaction it snapshots every package named in
+`base_managed_package_updates_restart_verify` (SSSD by default), then after the
+transaction it restarts and verifies the service if any watched trigger package
+changed — including a package upgraded as a dependency rather than explicitly
+listed in `managed-package-updates.list`. A genuine failure therefore fails
+`managed-package-updates.service`, which fires the `OnFailure` Slack notifier
+(see below), and is also caught by the next converge's `Verify SSSD is active
+after restart` task. To extend the guard to another auth-critical service, add
+an entry to `base_managed_package_updates_restart_verify`.
 
 ## Slack alerts for failed maintenance units
 

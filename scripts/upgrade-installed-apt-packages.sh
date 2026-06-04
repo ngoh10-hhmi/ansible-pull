@@ -88,8 +88,34 @@ installed_version() {
   dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true
 }
 
-# Restart and verify each critical service whose trigger packages were among
-# the packages this run actually upgraded.
+# Emit every package named in --restart-verify trigger lists, de-duplicated.
+collect_restart_trigger_packages() {
+  local spec="" triggers_csv="" trigger=""
+  local trigger_packages=()
+  local seen_packages=""
+
+  for spec in "${RESTART_VERIFY_SPECS[@]}"; do
+    # Skip malformed specs (no colon); restart_verify_services does the same
+    # before attempting to act on a service.
+    [[ "${spec}" == *:* ]] || continue
+    triggers_csv="${spec#*:}"
+
+    IFS=',' read -r -a trigger_packages <<< "${triggers_csv}"
+    for trigger in "${trigger_packages[@]}"; do
+      # Trim accidental whitespace around CSV entries.
+      trigger="${trigger#"${trigger%%[![:space:]]*}"}"
+      trigger="${trigger%"${trigger##*[![:space:]]}"}"
+      [[ -n "${trigger}" ]] || continue
+      if [[ " ${seen_packages} " != *" ${trigger} "* ]]; then
+        printf '%s\n' "${trigger}"
+        seen_packages+=" ${trigger}"
+      fi
+    done
+  done
+}
+
+# Restart and verify each critical service whose trigger packages changed
+# during this run.
 #
 # Why this exists: a package upgrade can restart a long-running daemon
 # mid-transaction, while its plugins/helpers are only half-swapped on disk.
@@ -100,10 +126,10 @@ installed_version() {
 # after the whole transaction settles, runs the service against consistent
 # binaries; failing loudly turns a silent lockout into a recorded failure.
 #
-# Arg: a space-delimited list of package names that were upgraded. Reads
+# Arg: a space-delimited list of changed trigger package names. Reads
 # RESTART_VERIFY_SPECS for the service-to-trigger-package mappings.
 restart_verify_services() {
-  local upgraded_packages="$1"
+  local changed_trigger_packages="$1"
   local spec="" service_name="" triggers_csv="" trigger=""
   local triggered=false
   local trigger_packages=()
@@ -118,9 +144,11 @@ restart_verify_services() {
     triggered=false
     IFS=',' read -r -a trigger_packages <<< "${triggers_csv}"
     for trigger in "${trigger_packages[@]}"; do
+      trigger="${trigger#"${trigger%%[![:space:]]*}"}"
+      trigger="${trigger%"${trigger##*[![:space:]]}"}"
       [[ -n "${trigger}" ]] || continue
-      # Whole-word match against the space-delimited upgraded list.
-      if [[ " ${upgraded_packages} " == *" ${trigger} "* ]]; then
+      # Whole-word match against the space-delimited changed trigger list.
+      if [[ " ${changed_trigger_packages} " == *" ${trigger} "* ]]; then
         triggered=true
         break
       fi
@@ -152,13 +180,17 @@ restart_verify_services() {
 }
 
 run_upgrade() {
+  local package_name=""
+
   if [[ ! -r "${LIST_FILE}" ]]; then
     echo "No readable package list found for ${LABEL}: ${LIST_FILE}"
     return 0
   fi
 
   local requested_packages=()
-  mapfile -t requested_packages < <(read_requested_packages "${LIST_FILE}")
+  while IFS= read -r package_name; do
+    requested_packages+=("${package_name}")
+  done < <(read_requested_packages "${LIST_FILE}")
 
   if [[ ${#requested_packages[@]} -eq 0 ]]; then
     echo "No requested packages defined for ${LABEL}"
@@ -166,7 +198,9 @@ run_upgrade() {
   fi
 
   local installed_packages=()
-  mapfile -t installed_packages < <(
+  while IFS= read -r package_name; do
+    installed_packages+=("${package_name}")
+  done < <(
     printf '%s\n' "${requested_packages[@]}" | filter_to_installed_packages
   )
 
@@ -180,7 +214,6 @@ run_upgrade() {
 
   local upgradable_packages=()
   local skipped_packages=()
-  local package_name=""
   local candidate_version=""
 
   for package_name in "${installed_packages[@]}"; do
@@ -211,11 +244,25 @@ run_upgrade() {
   fi
 
   # Snapshot versions before the transaction so we can tell which packages
-  # actually changed, and limit post-upgrade service restarts to those.
-  local -A version_before=()
+  # actually changed. Requested packages are tracked for normal upgrade
+  # reporting. Restart trigger packages are tracked separately so a dependency
+  # upgraded by the apt transaction can still drive post-upgrade service
+  # restart/verification even if it was not explicitly listed in LIST_FILE.
+  local version_before=()
   for package_name in "${upgradable_packages[@]}"; do
-    version_before["${package_name}"]="$(installed_version "${package_name}")"
+    version_before+=("$(installed_version "${package_name}")")
   done
+
+  local watched_trigger_packages=()
+  local trigger_version_before=()
+  if (( ${#RESTART_VERIFY_SPECS[@]} > 0 )); then
+    while IFS= read -r package_name; do
+      watched_trigger_packages+=("${package_name}")
+    done < <(collect_restart_trigger_packages)
+    for package_name in "${watched_trigger_packages[@]}"; do
+      trigger_version_before+=("$(installed_version "${package_name}")")
+    done
+  fi
 
   echo "Upgrading installed ${LABEL} packages: ${upgradable_packages[*]}"
   # --only-upgrade tells apt-get to upgrade existing packages but never install
@@ -228,15 +275,26 @@ run_upgrade() {
 
   local upgraded_packages=()
   local version_after=""
-  for package_name in "${upgradable_packages[@]}"; do
+  local index=0
+  for index in "${!upgradable_packages[@]}"; do
+    package_name="${upgradable_packages[${index}]}"
     version_after="$(installed_version "${package_name}")"
-    if [[ "${version_after}" != "${version_before[${package_name}]}" ]]; then
+    if [[ "${version_after}" != "${version_before[${index}]}" ]]; then
       upgraded_packages+=("${package_name}")
     fi
   done
 
   if (( ${#RESTART_VERIFY_SPECS[@]} > 0 )); then
-    restart_verify_services "${upgraded_packages[*]}"
+    local changed_trigger_packages=()
+    for index in "${!watched_trigger_packages[@]}"; do
+      package_name="${watched_trigger_packages[${index}]}"
+      version_after="$(installed_version "${package_name}")"
+      if [[ "${version_after}" != "${trigger_version_before[${index}]}" ]]; then
+        changed_trigger_packages+=("${package_name}")
+      fi
+    done
+
+    restart_verify_services "${changed_trigger_packages[*]}"
   fi
 }
 

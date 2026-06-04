@@ -314,7 +314,9 @@ def test_managed_package_updates_timer_is_installed() -> None:
     # SSSD's package set restarts the daemon mid-transaction on upgrade; the
     # helper must be told to cleanly restart and verify it afterward so a
     # half-swapped restart cannot silently leave AD login broken.
-    assert service.contains("--restart-verify sssd:sssd,sssd-common,sssd-tools")
+    assert service.contains(
+        "--restart-verify sssd:sssd,sssd-common,sssd-tools,sssd-ad,sssd-krb5,sssd-ldap,libnss-sss,libpam-sss"
+    )
     assert service.contains("TimeoutStartSec=30m")
     # A failed managed upgrade runs outside the pull wrapper, so it must alert
     # via the dedicated OnFailure notifier instead of dying silently.

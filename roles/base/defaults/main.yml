@@ -64,6 +64,11 @@ base_managed_package_updates_restart_verify:
       - sssd
       - sssd-common
       - sssd-tools
+      - sssd-ad
+      - sssd-krb5
+      - sssd-ldap
+      - libnss-sss
+      - libpam-sss
 
 base_browser_package_updates_enabled: true
 base_browser_package_updates_timer_on_calendar: "*-*-* 04:00:00"
