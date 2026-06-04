@@ -188,9 +188,7 @@ run_upgrade() {
   fi
 
   local requested_packages=()
-  while IFS= read -r package_name; do
-    requested_packages+=("${package_name}")
-  done < <(read_requested_packages "${LIST_FILE}")
+  mapfile -t requested_packages < <(read_requested_packages "${LIST_FILE}")
 
   if [[ ${#requested_packages[@]} -eq 0 ]]; then
     echo "No requested packages defined for ${LABEL}"
@@ -198,9 +196,7 @@ run_upgrade() {
   fi
 
   local installed_packages=()
-  while IFS= read -r package_name; do
-    installed_packages+=("${package_name}")
-  done < <(
+  mapfile -t installed_packages < <(
     printf '%s\n' "${requested_packages[@]}" | filter_to_installed_packages
   )
 
@@ -243,22 +239,15 @@ run_upgrade() {
     return 0
   fi
 
-  # Snapshot versions before the transaction so we can tell which packages
-  # actually changed. Requested packages are tracked for normal upgrade
-  # reporting. Restart trigger packages are tracked separately so a dependency
-  # upgraded by the apt transaction can still drive post-upgrade service
-  # restart/verification even if it was not explicitly listed in LIST_FILE.
-  local version_before=()
-  for package_name in "${upgradable_packages[@]}"; do
-    version_before+=("$(installed_version "${package_name}")")
-  done
-
+  # Snapshot restart trigger package versions before the transaction so we can
+  # tell which ones actually changed. They are tracked separately from the
+  # requested list so a dependency upgraded by the apt transaction can still
+  # drive post-upgrade service restart/verification even if it was not
+  # explicitly listed in LIST_FILE.
   local watched_trigger_packages=()
   local trigger_version_before=()
   if (( ${#RESTART_VERIFY_SPECS[@]} > 0 )); then
-    while IFS= read -r package_name; do
-      watched_trigger_packages+=("${package_name}")
-    done < <(collect_restart_trigger_packages)
+    mapfile -t watched_trigger_packages < <(collect_restart_trigger_packages)
     for package_name in "${watched_trigger_packages[@]}"; do
       trigger_version_before+=("$(installed_version "${package_name}")")
     done
@@ -273,18 +262,9 @@ run_upgrade() {
   # running concurrently.
   apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=600 "${upgradable_packages[@]}"
 
-  local upgraded_packages=()
-  local version_after=""
-  local index=0
-  for index in "${!upgradable_packages[@]}"; do
-    package_name="${upgradable_packages[${index}]}"
-    version_after="$(installed_version "${package_name}")"
-    if [[ "${version_after}" != "${version_before[${index}]}" ]]; then
-      upgraded_packages+=("${package_name}")
-    fi
-  done
-
   if (( ${#RESTART_VERIFY_SPECS[@]} > 0 )); then
+    local version_after=""
+    local index=0
     local changed_trigger_packages=()
     for index in "${!watched_trigger_packages[@]}"; do
       package_name="${watched_trigger_packages[${index}]}"
