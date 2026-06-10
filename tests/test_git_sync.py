@@ -173,6 +173,42 @@ def create_git_repo_with_two_commits(path: Path) -> tuple[str, str]:
     return older, newer
 
 
+def test_sync_existing_worktree_fails_and_keeps_checkout_on_fetch_failure(
+    tmp_path: Path,
+) -> None:
+    # A fetch failure (expired PAT, network blip) must NOT report success
+    # against the stale origin ref, and must NOT wipe a perfectly good
+    # checkout -- wiping would leave the host with no code to run and a fresh
+    # clone would fail the same way. Point origin at a non-existent repo so the
+    # fetch fails after the worktree is already valid.
+    repo_dir = tmp_path / "repo"
+    checkout_dir = tmp_path / "checkout"
+    create_git_repo(repo_dir)
+    run("git", "clone", "--quiet", str(repo_dir), str(checkout_dir))
+    bogus_repo = tmp_path / "does-not-exist"
+
+    result = run_bash(
+        "\n".join(
+            [
+                "source scripts/lib/git_sync.sh",
+                (
+                    "sync_checkout_or_clone "
+                    f"{shlex.quote(str(checkout_dir))} "
+                    f"{shlex.quote(str(bogus_repo))} "
+                    "main"
+                ),
+            ]
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "Successfully synced" not in result.stdout
+    assert "leaving the current checkout untouched" in result.stdout
+    # The existing checkout survived the transient failure.
+    assert (checkout_dir / ".git").exists()
+
+
 def test_sync_checkout_or_clone_supports_pinning_to_older_commit(tmp_path: Path) -> None:
     # Pinning to a commit older than the branch tip exercises the part of
     # the rollback path that the "same-commit-as-tip" test does not: the

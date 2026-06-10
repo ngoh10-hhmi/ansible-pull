@@ -244,6 +244,46 @@ def test_read_requested_packages_skips_comments_and_blanks(tmp_path: Path) -> No
     assert lines == ["sssd", "vim", "curl"]
 
 
+def test_run_upgrade_forces_c_locale_for_candidate_parse(tmp_path: Path) -> None:
+    # systemd propagates /etc/default/locale into the unit, so on a non-English
+    # host apt-cache translates the "Candidate:" label and the awk match would
+    # miss it, marking every package candidate-less and silently upgrading
+    # nothing. The mock apt-cache emits the English label only under LC_ALL=C
+    # and a translated label otherwise, so this passes only if the script
+    # forces the locale on the parse.
+    package_list = tmp_path / "managed-package-updates.list"
+    package_list.write_text("sssd\n", encoding="utf-8")
+
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source {HELPER}
+            LABEL=managed-baseline
+            LIST_FILE={shlex.quote(str(package_list))}
+
+            dpkg-query() {{
+              case "$*" in
+                *'${{Status}}'*) echo "install ok installed"; return 0 ;;
+              esac
+            }}
+            apt-cache() {{
+              if [[ "${{LC_ALL:-}}" == "C" ]]; then
+                echo "  Candidate: 2.0"
+              else
+                echo "  Kandidat: 2.0"
+              fi
+            }}
+            apt-get() {{ echo "apt-get $*"; return 0 ;}}
+
+            run_upgrade
+            """
+        )
+    )
+
+    assert "Upgrading installed managed-baseline packages: sssd" in result.stdout
+    assert "No installed managed-baseline packages have an upgrade candidate" not in result.stdout
+
+
 def test_run_upgrade_reports_missing_list_file(tmp_path: Path) -> None:
     missing = tmp_path / "absent.list"
     result = run_bash(

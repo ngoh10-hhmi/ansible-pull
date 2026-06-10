@@ -338,8 +338,10 @@ finish() {
   # This function is registered as a trap on EXIT so it always runs, even
   # when a command fails or the script is interrupted.  RUN_STATUS is set to
   # "success" only after run_playbook returns cleanly, and to "locked" when
-  # another run already holds the flock.  Any other value (including the
-  # initial "starting") means something went wrong.
+  # another run already holds the flock (a benign overlap, exit 0).  Any other
+  # value -- including the initial "starting" and "lock_timeout" (a blocking
+  # caller gave up waiting for the lock, exit 75) -- means something went
+  # wrong and is reported as a failure.
   local exit_code=$?
   local success_message=""
   local failure_message=""
@@ -420,12 +422,28 @@ select_target_host() {
 
 # Prevent overlapping runs from timer/manual invocations.
 acquire_lock_or_exit() {
-  # Open LOCK_FILE on file descriptor 9. flock -n 9 acquires an exclusive
-  # advisory lock on that fd without blocking; if another process already
-  # holds the lock (i.e. a prior run is still in progress) it returns
-  # non-zero immediately and we exit cleanly rather than queueing behind it.
+  # Open LOCK_FILE on file descriptor 9 for an exclusive advisory lock.
   exec 9>"${LOCK_FILE}"
 
+  # When ANSIBLE_PULL_LOCK_WAIT_SECONDS is a positive integer, block for up to
+  # that long for the lock instead of bailing. Callers that need their converge
+  # to actually take effect (e.g. bootstrap's AD-enrollment pass) set this so an
+  # in-flight timer run is waited out rather than treated as a successful
+  # no-op. If the wait times out we exit non-zero so the caller sees a real
+  # failure rather than a false success.
+  local wait_seconds="${ANSIBLE_PULL_LOCK_WAIT_SECONDS:-0}"
+  if [[ "${wait_seconds}" =~ ^[0-9]+$ && "${wait_seconds}" -gt 0 ]]; then
+    if ! flock -w "${wait_seconds}" 9; then
+      RUN_STATUS="lock_timeout"
+      log "Timed out after ${wait_seconds}s waiting for the ansible-pull lock; another run held it. Exiting with failure."
+      exit 75
+    fi
+    return 0
+  fi
+
+  # Default (timer/manual): flock -n acquires the lock without blocking. If
+  # another run already holds it, this is a benign overlap, so exit 0 rather
+  # than queueing behind it.
   if ! flock -n 9; then
     RUN_STATUS="locked"
     log "Another ansible-pull run is already in progress. Exiting."

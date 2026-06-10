@@ -106,6 +106,51 @@ git_fetch_commit_ref() {
     "+refs/tags/*:refs/tags/*"
 }
 
+# Point origin at the configured URL and fetch the requested ref into the
+# existing worktree. Every step is checked explicitly with `|| return 1`
+# rather than relying on `set -e`: sync_checkout_or_clone calls this from an
+# `if` condition, where bash disables errexit for the entire call tree, so a
+# bare `git fetch` failure (expired PAT, network blip) would otherwise be
+# ignored and the caller would "succeed" against a stale origin ref.
+sync_fetch_existing_worktree() {
+  local dest="$1"
+  local repo_url="$2"
+  local ref="$3"
+  local is_commit="$4"
+
+  remove_stale_git_locks "${dest}"
+
+  if git -C "${dest}" remote get-url origin >/dev/null 2>&1; then
+    git -C "${dest}" remote set-url origin "${repo_url}" || return 1
+  else
+    git -C "${dest}" remote add origin "${repo_url}" || return 1
+  fi
+
+  if [[ "${is_commit}" == "true" ]]; then
+    git_fetch_commit_ref "${dest}" "${ref}" || return 1
+  else
+    git_fetch_branch_ref "${dest}" "${ref}" || return 1
+  fi
+}
+
+# Move the existing worktree onto the freshly fetched ref. A failure here can
+# leave the worktree half-updated, so the caller wipes it for a clean reclone.
+sync_apply_ref_to_worktree() {
+  local dest="$1"
+  local ref="$2"
+  local is_commit="$3"
+
+  if [[ "${is_commit}" == "true" ]]; then
+    git -C "${dest}" checkout --detach "${ref}" || return 1
+    git -C "${dest}" reset --hard "${ref}" || return 1
+  else
+    git -C "${dest}" checkout -B "${ref}" "origin/${ref}" || return 1
+    git -C "${dest}" reset --hard "origin/${ref}" || return 1
+  fi
+  git -C "${dest}" clean -fdx || return 1
+  git_verify_head_matches_ref "${dest}" "${ref}" "${is_commit}" || return 1
+}
+
 sync_checkout_or_clone() {
   local dest="$1"
   local repo_url="$2"
@@ -122,27 +167,18 @@ sync_checkout_or_clone() {
   if is_valid_git_worktree "${dest}"; then
     git_sync_log "Existing repository found at ${dest}. Attempting to sync..."
 
-    if (
-      remove_stale_git_locks "${dest}"
+    # Fetch first. If the fetch fails, keep the existing checkout in place: the
+    # cause is almost always transient (network outage) or a credential problem
+    # that wiping cannot fix, and a fresh clone would just fail the same way --
+    # leaving the host with no code at all. We still return non-zero so the run
+    # fails loudly and the OnFailure/drift alerting fires, instead of silently
+    # "succeeding" against stale code.
+    if ! sync_fetch_existing_worktree "${dest}" "${repo_url}" "${ref}" "${is_commit}"; then
+      git_sync_log "Error: failed to fetch updates for existing repository at ${dest}; leaving the current checkout untouched."
+      return 1
+    fi
 
-      if git -C "${dest}" remote get-url origin >/dev/null 2>&1; then
-        git -C "${dest}" remote set-url origin "${repo_url}"
-      else
-        git -C "${dest}" remote add origin "${repo_url}"
-      fi
-
-      if [[ "${is_commit}" == "true" ]]; then
-        git_fetch_commit_ref "${dest}" "${ref}"
-        git -C "${dest}" checkout --detach "${ref}"
-        git -C "${dest}" reset --hard "${ref}"
-      else
-        git_fetch_branch_ref "${dest}" "${ref}"
-        git -C "${dest}" checkout -B "${ref}" "origin/${ref}"
-        git -C "${dest}" reset --hard "origin/${ref}"
-      fi
-      git -C "${dest}" clean -fdx
-      git_verify_head_matches_ref "${dest}" "${ref}" "${is_commit}"
-    ); then
+    if sync_apply_ref_to_worktree "${dest}" "${ref}" "${is_commit}"; then
       git_sync_log "Successfully synced existing repository."
       return 0
     fi

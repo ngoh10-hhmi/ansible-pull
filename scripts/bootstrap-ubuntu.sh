@@ -152,6 +152,12 @@ AD_CONVERGE_SUCCEEDED="false"
 BOOTSTRAP_LIBS_LOADED="false"
 GIT_CREDENTIALS_WRITTEN="false"
 GIT_CREDENTIALS_FILE="/root/.git-credentials-ansible-pull"
+# Bootstrap's converge passes must actually run, so they wait out an in-flight
+# timer run for the lock rather than letting run-ansible-pull treat lock
+# contention as a successful no-op (which would falsely set
+# AD_CONVERGE_SUCCEEDED and permanently skip the one-shot sudo-users converge).
+# A converge plus a final apt pass stays well under 30 minutes.
+readonly BOOTSTRAP_LOCK_WAIT_SECONDS=1800
 
 # True when --reset-env appears anywhere in the argument list. We need this
 # answer before parse_args runs, because the preload below must happen ahead of
@@ -810,7 +816,8 @@ prompt_slack_webhook() {
 
 # Perform the first configuration convergence.
 run_initial_configuration() {
-  /usr/local/sbin/run-ansible-pull
+  ANSIBLE_PULL_LOCK_WAIT_SECONDS="${BOOTSTRAP_LOCK_WAIT_SECONDS}" \
+    /usr/local/sbin/run-ansible-pull
 }
 
 # Gather Kerberos creds and rerun convergence for the required AD enrollment.
@@ -882,7 +889,8 @@ join_active_directory() {
 
   BOOTSTRAP_PHASE="ad_phase"
   write_bootstrap_vars_ad_phase_state
-  /usr/local/sbin/run-ansible-pull
+  ANSIBLE_PULL_LOCK_WAIT_SECONDS="${BOOTSTRAP_LOCK_WAIT_SECONDS}" \
+    /usr/local/sbin/run-ansible-pull
   AD_CONVERGE_SUCCEEDED="true"
   BOOTSTRAP_PHASE="post_ad_converge"
 }

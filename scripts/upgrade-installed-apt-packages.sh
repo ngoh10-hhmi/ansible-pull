@@ -218,8 +218,13 @@ run_upgrade() {
     # candidate exists in the configured APT sources (e.g. repo not yet
     # refreshed, or package removed from upstream), so skip those to avoid a
     # failed apt-get install call.
+    #
+    # LC_ALL=C forces the English "Candidate:" label. systemd propagates
+    # /etc/default/locale into the unit, so on a non-English host the label is
+    # translated, the awk match never fires, every package looks candidate-less,
+    # and the timer silently stops upgrading anything (including SSSD).
     candidate_version="$(
-      apt-cache policy "${package_name}" \
+      LC_ALL=C apt-cache policy "${package_name}" \
         | awk '/Candidate:/ { print $2; exit }'
     )"
 

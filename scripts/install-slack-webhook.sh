@@ -66,19 +66,41 @@ fi
 # is "-". --quiet suppresses progress noise, --no-pass plus stdin
 # redirected from /dev/null prevents the legacy "Password for ..."
 # prompt from being mixed into stdout even though
-# --use-kerberos=required already authenticates. As a defence in
-# depth we pipe through grep to extract only the first
-# https://hooks.slack.com/services/... token from the output, so any
-# stray prompt or progress line cannot pollute the URL we persist.
-webhook="$(smbclient "//${SHARE_HOST}/${SHARE_NAME}" \
+# --use-kerberos=required already authenticates.
+#
+# Capture stdout and stderr separately. The fetch is the most likely thing
+# to fail (no Kerberos access to the share, share/host typo, file missing),
+# and the previous pipe-into-grep form let pipefail+errexit kill the script
+# at the assignment with no diagnostic at all. Running smbclient on its own
+# in an `if !` guard keeps errexit from firing and lets us surface smbclient's
+# own error message.
+smb_stderr="$(mktemp)"
+trap 'rm -f "${smb_stderr}"' EXIT
+
+if ! share_content="$(smbclient "//${SHARE_HOST}/${SHARE_NAME}" \
   --use-kerberos=required \
   --no-pass \
   --quiet \
   -c "get \"${SHARE_FILE}\" -" \
   </dev/null \
-  2>/dev/null \
+  2>"${smb_stderr}")"; then
+  echo "Failed to read '${SHARE_FILE}' from //${SHARE_HOST}/${SHARE_NAME}." >&2
+  if [[ -s "${smb_stderr}" ]]; then
+    echo "smbclient reported:" >&2
+    cat "${smb_stderr}" >&2
+  fi
+  echo "Check that you have a valid Kerberos ticket (klist) and access to the share." >&2
+  exit 1
+fi
+
+# As a defence in depth, extract only the first
+# https://hooks.slack.com/services/... token from the fetched content so any
+# stray prompt or progress line cannot pollute the URL we persist. `|| true`
+# keeps a no-match from tripping pipefail+errexit, so we reach the diagnostic
+# below instead of dying silently when the file content is wrong.
+webhook="$(printf '%s\n' "${share_content}" \
   | grep -oE 'https://hooks\.slack\.com/services/[A-Za-z0-9/_-]+' \
-  | head -n1)"
+  | head -n1 || true)"
 
 if [[ ! "${webhook}" =~ ^https://hooks\.slack\.com/services/ ]]; then
   echo "Fetched share content does not look like a Slack webhook URL." >&2

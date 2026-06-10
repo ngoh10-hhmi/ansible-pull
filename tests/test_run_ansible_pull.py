@@ -89,3 +89,90 @@ def test_failure_notification_falls_back_to_non_ansible_fatal_excerpt(tmp_path: 
     assert "*Phase:* `sync_repository_checkout`" in output
     assert "fatal: couldn't find remote ref missing-branch" in output
     assert "*Task:*" not in output
+
+
+def _run_bash_proc(script: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", "-lc", script],
+        cwd=REPO_ROOT,
+        check=False,
+        text=True,
+        capture_output=True,
+        env=os.environ.copy(),
+    )
+
+
+def _hold_lock_then(lock_file: Path, ready: Path, hold_seconds: int) -> str:
+    # Hold the lock in a background subshell on a different fd, signalling via a
+    # ready file once acquired. Output is redirected to /dev/null so the holder
+    # does not keep the captured pipe open after the foreground shell exits.
+    return (
+        f"( flock 8; touch {shlex.quote(str(ready))}; sleep {hold_seconds} ) "
+        f"8>{shlex.quote(str(lock_file))} >/dev/null 2>&1 &\n"
+        f"while [ ! -f {shlex.quote(str(ready))} ]; do sleep 0.05; done"
+    )
+
+
+def test_acquire_lock_default_skips_with_exit_zero_on_contention(tmp_path: Path) -> None:
+    lock_file = tmp_path / "pull.lock"
+    ready = tmp_path / "ready"
+
+    result = _run_bash_proc(
+        "\n".join(
+            [
+                "source scripts/run-ansible-pull.sh",
+                f"LOCK_FILE={shlex.quote(str(lock_file))}",
+                _hold_lock_then(lock_file, ready, 3),
+                "acquire_lock_or_exit",
+                "echo ACQUIRED",
+            ]
+        )
+    )
+
+    # A benign overlap with a concurrent run is reported and exits 0 without
+    # converging, so the timer does not record a spurious failure.
+    assert result.returncode == 0
+    assert "Another ansible-pull run is already in progress" in result.stdout
+    assert "ACQUIRED" not in result.stdout
+
+
+def test_acquire_lock_blocking_times_out_with_failure(tmp_path: Path) -> None:
+    lock_file = tmp_path / "pull.lock"
+    ready = tmp_path / "ready"
+
+    result = _run_bash_proc(
+        "\n".join(
+            [
+                "source scripts/run-ansible-pull.sh",
+                f"LOCK_FILE={shlex.quote(str(lock_file))}",
+                _hold_lock_then(lock_file, ready, 3),
+                "ANSIBLE_PULL_LOCK_WAIT_SECONDS=1 acquire_lock_or_exit",
+                "echo ACQUIRED",
+            ]
+        )
+    )
+
+    # A caller that needs its converge to run (bootstrap) must NOT treat lock
+    # contention as success: a timed-out wait exits non-zero so the caller sees
+    # a real failure.
+    assert result.returncode == 75
+    assert "Timed out" in result.stdout
+    assert "ACQUIRED" not in result.stdout
+
+
+def test_acquire_lock_blocking_succeeds_when_lock_is_free(tmp_path: Path) -> None:
+    lock_file = tmp_path / "pull.lock"
+
+    result = _run_bash_proc(
+        "\n".join(
+            [
+                "source scripts/run-ansible-pull.sh",
+                f"LOCK_FILE={shlex.quote(str(lock_file))}",
+                "ANSIBLE_PULL_LOCK_WAIT_SECONDS=5 acquire_lock_or_exit",
+                "echo ACQUIRED",
+            ]
+        )
+    )
+
+    assert result.returncode == 0
+    assert "ACQUIRED" in result.stdout
