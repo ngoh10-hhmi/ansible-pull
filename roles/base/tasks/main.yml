@@ -130,6 +130,13 @@
 # the specific keys it manages (REPO_URL, BRANCH, etc.) and leaves any
 # operator-added values (e.g. SLACK_WEBHOOK_URL written by bootstrap or
 # switch-pull-branch.sh) intact across converge runs.
+#
+# Values are shell-quoted because pull.env is consumed by `source` (see
+# load_env_file in scripts/lib/envfile.sh), and bootstrap writes the same file
+# with `printf '%q'`. Writing raw values here would diverge from bootstrap and,
+# for a value containing shell metacharacters, mis-parse or execute when next
+# sourced. The quote filter is a no-op for ordinary URLs/paths/branch names, so
+# this does not churn the common case.
 - name: Install ansible-pull environment file
   ansible.builtin.lineinfile:
     path: /etc/ansible/pull.env
@@ -138,7 +145,7 @@
     group: root
     mode: "0600"
     regexp: "^{{ item.key }}="
-    line: "{{ item.key }}={{ item.value }}"
+    line: "{{ item.key }}={{ item.value | quote }}"
   loop:
     - key: REPO_URL
       value: "{{ base_ansible_pull_repo_url }}"
@@ -616,6 +623,18 @@
     - base_unresolved_bootstrap_sudo_users is defined
     - (base_unresolved_bootstrap_sudo_users | length) > 0
 
+# Read the current local sudo group membership so the gpasswd task below can
+# report changed only when it actually adds someone. gpasswd -a prints
+# "Adding user ... to group ..." and exits 0 even when the user is already a
+# member, so its output cannot distinguish a real change from a no-op.
+- name: Read current local sudo group membership
+  ansible.builtin.getent:
+    database: group
+    key: sudo
+  when:
+    - base_manage_bootstrap_sudo_users | bool
+    - (base_effective_bootstrap_sudo_users | default([]) | length) > 0
+
 # gpasswd runs over every requested entry, not just the resolved subset, so
 # the operator's intent is preserved across re-bootstraps and scheduled
 # converges. A "does not exist" error is tolerated — the typo path is
@@ -629,11 +648,12 @@
       - "{{ item }}"
       - sudo
   register: base_sudo_group_membership
+  # Field [2] of the getent group entry is the comma-separated member list.
+  # Report changed only when this user was not already a member.
   changed_when: >-
     base_sudo_group_membership.rc == 0
-    and 'already a member' not in
-    ((base_sudo_group_membership.stdout | default(''))
-    + (base_sudo_group_membership.stderr | default('')))
+    and item not in
+    ((ansible_facts.getent_group['sudo'][2] | default('')).split(','))
   failed_when: >-
     base_sudo_group_membership.rc != 0
     and 'does not exist' not in (base_sudo_group_membership.stderr | default(''))

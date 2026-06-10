@@ -158,6 +158,11 @@ GIT_CREDENTIALS_FILE="/root/.git-credentials-ansible-pull"
 # AD_CONVERGE_SUCCEEDED and permanently skip the one-shot sudo-users converge).
 # A converge plus a final apt pass stays well under 30 minutes.
 readonly BOOTSTRAP_LOCK_WAIT_SECONDS=1800
+# The advisory lock the scheduled runner (run-ansible-pull) holds while it
+# syncs and converges. Bootstrap takes it too while doing its own git sync so
+# the two cannot race on the same worktree. Must match LOCK_FILE in
+# scripts/run-ansible-pull.sh.
+readonly PULL_LOCK_FILE="/var/lock/ansible-pull.lock"
 
 # True when --reset-env appears anywhere in the argument list. We need this
 # answer before parse_args runs, because the preload below must happen ahead of
@@ -438,6 +443,24 @@ bootstrap_fetch_commit_ref() {
   git -C "${repo_dir}" fetch --prune origin \
     "+refs/heads/*:refs/remotes/origin/*" \
     "+refs/tags/*:refs/tags/*"
+}
+
+# Acquire the scheduled runner's advisory lock on fd 9 before bootstrap touches
+# the worktree. Without this, a bootstrap re-run while the timer is mid-sync
+# would let remove_stale_git_locks delete the live git's index.lock and have
+# both processes reset --hard/clean the same checkout concurrently, corrupting
+# it. Blocks up to BOOTSTRAP_LOCK_WAIT_SECONDS, then fails loudly.
+acquire_pull_sync_lock() {
+  exec 9>"${PULL_LOCK_FILE}"
+  if ! flock -w "${BOOTSTRAP_LOCK_WAIT_SECONDS}" 9; then
+    die "Timed out after ${BOOTSTRAP_LOCK_WAIT_SECONDS}s waiting for ${PULL_LOCK_FILE}; another ansible-pull run is in progress. Re-run bootstrap once it completes."
+  fi
+}
+
+# Release the lock by closing fd 9. Called before run-ansible-pull, which
+# acquires the same lock itself (holding it here would deadlock that run).
+release_pull_sync_lock() {
+  exec 9>&-
 }
 
 # Ensure a local checkout exists and is synced to the requested branch or commit.
@@ -950,9 +973,11 @@ main() {
   install_bootstrap_dependencies
   prepare_runtime_directories
   configure_git_credentials
+  acquire_pull_sync_lock
   sync_repository_checkout
   source_checkout_libs
   install_runtime_support
+  release_pull_sync_lock
 
   echo "--- Initial Workstation Config ---"
   prompt_slack_webhook

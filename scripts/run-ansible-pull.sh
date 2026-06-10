@@ -11,6 +11,10 @@ SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
 HOSTNAME_SHORT=""
 HOSTNAME_FQDN=""
 RUN_LOG=""
+# Line count of RUN_LOG before this run starts appending. Failure-excerpt
+# extraction only looks past this point so it never quotes a previous run's
+# output from the append-only per-host log. Defaults to 0 (whole file).
+RUN_LOG_START_LINE=0
 RUNTIME_INVENTORY=""
 LOCK_FILE=""
 TARGET_HOST=""
@@ -71,7 +75,17 @@ prepare_runtime_context() {
 # capture the same stream in journald.
 setup_logging() {
   touch "${RUN_LOG}"
+  # Capture the pre-existing line count before redirecting output here, so the
+  # extract_* helpers can restrict failure excerpts to this run's lines.
+  RUN_LOG_START_LINE="$(wc -l < "${RUN_LOG}" 2>/dev/null || echo 0)"
   exec > >(tee -a "${RUN_LOG}") 2>&1
+}
+
+# Emit only the portion of RUN_LOG this run appended (everything after
+# RUN_LOG_START_LINE). Returns non-zero when there is no log yet.
+current_run_log() {
+  [[ -f "${RUN_LOG:-}" ]] || return 1
+  tail -n +"$(( ${RUN_LOG_START_LINE:-0} + 1 ))" "${RUN_LOG}"
 }
 
 log() {
@@ -121,7 +135,7 @@ extract_last_matching_line() {
     return 1
   fi
 
-  line="$(grep -E "${pattern}" "${RUN_LOG}" | tail -n 1 || true)"
+  line="$(current_run_log | grep -E "${pattern}" | tail -n 1 || true)"
   [[ -n "${line}" ]] || return 1
   printf '%s\n' "${line}"
 }
@@ -145,17 +159,19 @@ extract_last_task_name() {
 extract_block_from_last_match() {
   local pattern="$1"
   local max_lines="$2"
+  local slice=""
   local matched_line=""
   local start_line=""
   local end_line=""
 
-  if [[ ! -f "${RUN_LOG:-}" ]]; then
-    return 1
-  fi
+  # Work against only this run's slice of the log so line numbers and matches
+  # cannot drift into a previous run's output.
+  slice="$(current_run_log)" || return 1
+  [[ -n "${slice}" ]] || return 1
 
   # grep -n produces "linenum:content"; tail -n 1 picks the last match in
-  # the file so we always surface the most recent failure, not an earlier one.
-  matched_line="$(grep -n -E "${pattern}" "${RUN_LOG}" | tail -n 1 || true)"
+  # the slice so we always surface the most recent failure, not an earlier one.
+  matched_line="$(printf '%s\n' "${slice}" | grep -n -E "${pattern}" | tail -n 1 || true)"
   [[ -n "${matched_line}" ]] || return 1
 
   # Strip everything from the first colon onward to get just the line number.
@@ -165,7 +181,7 @@ extract_block_from_last_match() {
   # Read up to max_lines from the match point, but stop early at the Ansible
   # PLAY RECAP header or at the first blank line after line 1, whichever
   # comes first — this keeps the excerpt tight and on-topic.
-  sed -n "${start_line},${end_line}p" "${RUN_LOG}" | awk '
+  printf '%s\n' "${slice}" | sed -n "${start_line},${end_line}p" | awk '
     /^PLAY RECAP/ { exit }
     NR > 1 && /^[[:space:]]*$/ { exit }
     { print }
@@ -195,10 +211,10 @@ extract_failure_excerpt() {
     excerpt="$(extract_block_from_last_match '^fatal:' 3 || true)"
   fi
   if [[ -z "${excerpt}" && -f "${RUN_LOG:-}" ]]; then
-    excerpt="$(tail -n 12 "${RUN_LOG}" | awk '!/^\[[0-9]{4}-[0-9]{2}-[0-9]{2} / { print }' | tail -n 8 || true)"
+    excerpt="$(current_run_log | tail -n 12 | awk '!/^\[[0-9]{4}-[0-9]{2}-[0-9]{2} / { print }' | tail -n 8 || true)"
   fi
   if [[ -z "${excerpt}" && -f "${RUN_LOG:-}" ]]; then
-    excerpt="$(tail -n 8 "${RUN_LOG}" || true)"
+    excerpt="$(current_run_log | tail -n 8 || true)"
   fi
 
   [[ -n "${excerpt}" ]] || return 1

@@ -91,6 +91,89 @@ def test_failure_notification_falls_back_to_non_ansible_fatal_excerpt(tmp_path: 
     assert "*Task:*" not in output
 
 
+def test_failure_excerpt_ignores_previous_run_in_appended_log(tmp_path: Path) -> None:
+    # The per-host log is append-only (rotated weekly). A failure excerpt must
+    # come from this run's slice only, never an earlier run left in the file.
+    previous_run = textwrap.dedent(
+        """\
+        [2026-04-15 09:00:00] Starting ansible-pull run for host 'host1' on branch 'testing'.
+        TASK [base : Old task] ********************************************************
+        fatal: [host1]: FAILED! => msg: OLD FAILURE from a previous run
+        PLAY RECAP *********************************************************************
+        """
+    )
+    this_run = textwrap.dedent(
+        """\
+        [2026-04-15 11:00:00] Starting ansible-pull run for host 'host1' on branch 'testing'.
+        TASK [base : New task] ********************************************************
+        fatal: [host1]: FAILED! => msg: NEW FAILURE from this run
+        PLAY RECAP *********************************************************************
+        """
+    )
+    run_log = tmp_path / "ansible-pull-host1.log"
+    run_log.write_text(previous_run + this_run, encoding="utf-8")
+    start_line = len(previous_run.splitlines())
+
+    output = run_bash(
+        "\n".join(
+            [
+                "source scripts/run-ansible-pull.sh",
+                f"RUN_LOG={shlex.quote(str(run_log))}",
+                f"RUN_LOG_START_LINE={start_line}",
+                "HOSTNAME_SHORT=host1",
+                "BRANCH=testing",
+                "CURRENT_PHASE=run_playbook",
+                "RUN_STARTED_AT=$(( $(date +%s) - 5 ))",
+                "build_failure_notification_text 2",
+            ]
+        )
+    )
+
+    assert "NEW FAILURE from this run" in output
+    assert "*Task:* `base : New task`" in output
+    assert "OLD FAILURE from a previous run" not in output
+    assert "Old task" not in output
+
+
+def test_failure_excerpt_does_not_borrow_prior_failure_when_this_run_has_none(
+    tmp_path: Path,
+) -> None:
+    # This run fails before emitting any TASK/fatal line (e.g. during sync).
+    # The excerpt must not reach back and quote the previous run's fatal.
+    previous_run = textwrap.dedent(
+        """\
+        [2026-04-15 09:00:00] Starting ansible-pull run for host 'host1' on branch 'testing'.
+        TASK [base : Old task] ********************************************************
+        fatal: [host1]: FAILED! => msg: OLD FAILURE from a previous run
+        PLAY RECAP *********************************************************************
+        """
+    )
+    this_run = "[2026-04-15 11:00:00] Starting ansible-pull run for host 'host1' on branch 'testing'.\nfatal: could not read from remote repository\n"
+    run_log = tmp_path / "ansible-pull-host1.log"
+    run_log.write_text(previous_run + this_run, encoding="utf-8")
+    start_line = len(previous_run.splitlines())
+
+    output = run_bash(
+        "\n".join(
+            [
+                "source scripts/run-ansible-pull.sh",
+                f"RUN_LOG={shlex.quote(str(run_log))}",
+                f"RUN_LOG_START_LINE={start_line}",
+                "HOSTNAME_SHORT=host1",
+                "BRANCH=testing",
+                "CURRENT_PHASE=sync_repository_checkout",
+                "RUN_STARTED_AT=$(( $(date +%s) - 5 ))",
+                "build_failure_notification_text 1",
+            ]
+        )
+    )
+
+    assert "OLD FAILURE from a previous run" not in output
+    assert "Old task" not in output
+    assert "*Task:*" not in output
+    assert "could not read from remote repository" in output
+
+
 def _run_bash_proc(script: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["bash", "-lc", script],

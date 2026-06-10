@@ -143,6 +143,11 @@
     owner: root
     group: root
     mode: "0440"
+    # visudo -cf rejects a syntactically invalid drop-in (e.g. an ad_sudo_group
+    # containing spaces or other unescaped sudoers metacharacters) and leaves
+    # the existing file untouched. Without this, one bad drop-in makes sudo
+    # refuse to run on every host on the next converge.
+    validate: "visudo -cf %s"
     content: |
       %scicompsys ALL=(ALL:ALL) ALL
       {% if ad_sudo_group is defined %}

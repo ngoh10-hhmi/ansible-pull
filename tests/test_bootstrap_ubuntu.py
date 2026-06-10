@@ -548,6 +548,8 @@ def test_main_skips_enrollment_if_already_joined() -> None:
             install_bootstrap_dependencies() { :; }
             prepare_runtime_directories() { :; }
             configure_git_credentials() { :; }
+            acquire_pull_sync_lock() { :; }
+            release_pull_sync_lock() { :; }
             sync_repository_checkout() { :; }
             source_checkout_libs() { :; }
             install_runtime_support() { :; }
@@ -620,6 +622,8 @@ def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
             install_bootstrap_dependencies() { :; }
             prepare_runtime_directories() { :; }
             configure_git_credentials() { :; }
+            acquire_pull_sync_lock() { :; }
+            release_pull_sync_lock() { :; }
             sync_repository_checkout() { :; }
             source_checkout_libs() { :; }
             install_runtime_support() { :; }
