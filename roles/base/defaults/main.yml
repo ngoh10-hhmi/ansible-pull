@@ -17,12 +17,10 @@ base_workstation_ppas: []
 base_workstation_apt_repos: []
 
 base_workstation_extra_users: []
-# Bootstrap-only local sudo-group inputs. The bootstrap script writes these for
-# the AD-enrollment converge, then omits them from the final persisted
-# bootstrap vars so scheduled ansible-pull runs do not keep re-applying local
-# sudo membership.
-base_manage_bootstrap_sudo_users: false
-base_bootstrap_sudo_users: []
+# Sudo group membership for bootstrap-time users is no longer managed by the
+# role. The bootstrap script grants it directly (gpasswd) after the realm join,
+# once each requested account can be confirmed to resolve in AD.
+#
 # Legacy persisted values from older hosts. These are intentionally not acted
 # on during normal scheduled converges anymore.
 base_sudo_users: []

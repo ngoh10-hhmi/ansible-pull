@@ -297,18 +297,19 @@ resets to that exact SHA on every run, so it never drifts forward.
 - After SSSD is restarted by the AD-join handler the role asserts `systemctl is-active sssd` so a permissions regression fails the converge immediately instead of surfacing at next login.
 - `managed-package-updates.timer` upgrades the SSSD package set (it is in `base_workstation_base_packages`). dpkg restarts SSSD mid-transaction against half-swapped provider plugins, which can leave the daemon dead with no clean restart and break AD login until the next manual/converge restart. `base_managed_package_updates_restart_verify` makes `upgrade-installed-apt-packages` snapshot each service's `trigger_packages` before/after the apt transaction, then do one clean restart + `is-active` check of that service when any trigger package changed (including dependency upgrades), and exit non-zero otherwise. Keep SSSD (and any future auth-critical daemon whose packages are in the baseline) in that list rather than excluding it from upgrades.
 - The timer-driven maintenance units (`managed-package-updates`, `browser-package-updates`, `apt-refresh`) run outside `run-ansible-pull`, so they do not get the wrapper's Slack notification. Each carries `OnFailure=ansible-pull-slack-notify@%n.service`, a templated unit that runs `/usr/local/sbin/notify-unit-failure-slack` (reads `SLACK_WEBHOOK_URL` from `/etc/ansible/pull.env`; no-op without a webhook). The notifier template intentionally has no `OnFailure` of its own to avoid recursion. The whole feature (helper + template unit + the `OnFailure` lines) is gated on `base_maintenance_failure_slack_notify_enabled` so it can be removed cleanly. Do not add `OnFailure` to `ansible-pull.service` — the wrapper already self-notifies and a second hook would double-alert.
-- Bootstrap-only local sudo-group updates happen during bootstrap after AD/SSSD
-  is configured so requested usernames have the best chance to resolve through
-  NSS, but resolution is not required — the role passes every requested name
-  to `gpasswd -a` and tolerates the `does not exist` failure so the play does
-  not abort on a typo.
-- `base_bootstrap_sudo_users` is written into the AD-phase
-  `/etc/ansible/bootstrap-vars.yml` but omitted from the final stable state, so
-  the sudo-group add happens once during bootstrap rather than being
-  re-asserted on every scheduled converge. The group membership persists at the
-  OS level afterward. To change who has bootstrap sudo later, manage the account
-  directly or re-run bootstrap with the corrected input. (Keep the keys out of
-  the final state in `write_bootstrap_vars_final_state`.)
+- Bootstrap-time sudo-group membership is handled entirely by the bootstrap
+  script (`add_bootstrap_sudo_users`), not the role. It runs after the AD join +
+  SSSD are up (the first point a domain account can be confirmed to exist),
+  validates each requested name with `getent passwd` (retried for SSSD cache
+  warmup), and adds it with `gpasswd -a`. A name that does not resolve in AD is
+  reported by name and the whole list is reprompted interactively — it does not
+  abort the converge. A `gpasswd` failure on a name that *did* resolve is fatal
+  (unexpected). The group membership persists at the OS level afterward.
+- Local accounts that will be created later are intentionally out of scope:
+  `gpasswd` cannot add an account that does not exist yet, so create the user
+  and run `usermod -aG sudo <user>` by hand after bootstrap. Do not reintroduce
+  the old role-side `base_bootstrap_sudo_users` / NSS-tolerance path to work
+  around this — it silently no-op'd on exactly these names.
 - The final `apt-get upgrade -y` in bootstrap is intentional because bootstrap
   is expected to run on freshly imaged HHMI systems that should be brought
   current immediately. It is non-fatal: by that point AD enrollment, the timer,

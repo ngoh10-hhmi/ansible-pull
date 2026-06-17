@@ -181,7 +181,10 @@ def test_write_bootstrap_vars_initial_state_omits_bootstrap_only_keys(tmp_path: 
     assert 'ad_join_user' not in result.stdout
 
 
-def test_write_bootstrap_vars_ad_phase_state_includes_bootstrap_only_keys(tmp_path: Path) -> None:
+def test_write_bootstrap_vars_ad_phase_state_omits_sudo_keys(tmp_path: Path) -> None:
+    # Sudo group membership is applied directly by the script after the realm
+    # join, not expressed through bootstrap vars, so the AD-phase state must not
+    # carry the listed users even when some were collected.
     result = run_bash(
         "\n".join(
             [
@@ -195,10 +198,10 @@ def test_write_bootstrap_vars_ad_phase_state_includes_bootstrap_only_keys(tmp_pa
     )
 
     assert 'base_ad_enroll: true' in result.stdout
-    assert 'base_manage_bootstrap_sudo_users: true' in result.stdout
-    assert 'base_bootstrap_sudo_users:' in result.stdout
-    assert '  - alice' in result.stdout
-    assert '  - bob' in result.stdout
+    assert 'base_manage_bootstrap_sudo_users' not in result.stdout
+    assert 'base_bootstrap_sudo_users' not in result.stdout
+    assert 'alice' not in result.stdout
+    assert 'bob' not in result.stdout
     assert 'ad_join_user' not in result.stdout
 
 
@@ -795,6 +798,84 @@ def test_prompt_sudo_users_reprompts_on_invalid_username() -> None:
     )
     assert "invalid username" in result.stderr
     assert "SUDO=alice bob" in result.stdout
+
+
+def test_add_bootstrap_sudo_users_empty_is_noop() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SUDO_USERS=()
+            gpasswd() { echo "GPASSWD:$*"; }
+            add_bootstrap_sudo_users
+            echo "DONE"
+            """
+        )
+    )
+    assert "GPASSWD:" not in result.stdout
+    assert "DONE" in result.stdout
+
+
+def test_add_bootstrap_sudo_users_adds_resolved_users() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SUDO_USERS=("alice" "bob")
+            getent() { return 0; }
+            sleep() { :; }
+            gpasswd() { echo "GPASSWD:$*"; return 0; }
+            add_bootstrap_sudo_users
+            """
+        )
+    )
+    assert "GPASSWD:-a alice sudo" in result.stdout
+    assert "GPASSWD:-a bob sudo" in result.stdout
+
+
+def test_add_bootstrap_sudo_users_reprompts_when_user_missing_in_ad() -> None:
+    # A name that never resolves in AD must be reported by name and the whole
+    # list reprompted, rather than aborting. The reprompt supplies a resolvable
+    # name, which is then the only user handed to gpasswd.
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SUDO_USERS=("ghost")
+            getent() { [[ "$2" == "ghost" ]] && return 2; return 0; }
+            sleep() { :; }
+            gpasswd() { echo "GPASSWD:$*"; return 0; }
+            add_bootstrap_sudo_users <<'INPUT'
+            alice
+            INPUT
+            """
+        )
+    )
+    assert "does not exist in AD" in result.stderr
+    assert "ghost" in result.stderr
+    assert "GPASSWD:-a alice sudo" in result.stdout
+    assert "GPASSWD:-a ghost sudo" not in result.stdout
+
+
+def test_add_bootstrap_sudo_users_dies_when_gpasswd_fails_for_resolved_user() -> None:
+    # A user that resolves in AD but still cannot be added is an unexpected
+    # failure (e.g. a missing sudo group), so it must abort loudly rather than
+    # be swallowed.
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            SUDO_USERS=("alice")
+            getent() { return 0; }
+            sleep() { :; }
+            gpasswd() { return 1; }
+            add_bootstrap_sudo_users
+            """
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "failed to add 'alice'" in result.stderr
 
 
 def test_prompt_machine_identity_restarts_when_not_confirmed() -> None:

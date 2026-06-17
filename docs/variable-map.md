@@ -125,24 +125,18 @@ Notes:
 | Variable | What it controls | Usually set in | Used by |
 | --- | --- | --- | --- |
 | `base_workstation_extra_users` | Optional local user accounts to create | shared or host inventory | user creation task in `roles/base/tasks/main.yml` |
-| `base_manage_bootstrap_sudo_users` | Whether bootstrap should do the one-time local `sudo` group update | temporary bootstrap-written value | `when` guard for NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
-| `base_bootstrap_sudo_users` | Usernames to validate through NSS and add to the local `sudo` group during bootstrap only | temporary bootstrap-written value | NSS lookup plus `gpasswd` tasks in `roles/base/tasks/main.yml` |
 | `base_sudo_users` | Legacy persisted sudo-user list from older hosts | older bootstrap state or legacy inventory | retained for compatibility context; no longer enforced on scheduled runs |
 | `base_local_sudo_users` | Older alias for `base_sudo_users` | older bootstrap state or legacy inventory | retained for compatibility context; no longer enforced on scheduled runs |
 
 Notes:
 
-- `base_bootstrap_sudo_users` may include local users or AD-backed usernames.
-- AD-backed usernames are added to the local `sudo` group only during bootstrap,
-  after the AD join and SSSD configuration steps run.
-- Entries in `base_bootstrap_sudo_users` are all passed to `gpasswd`, including
-  names that did not resolve through NSS. The role logs a warning for the
-  unresolved subset and tolerates the `gpasswd: user 'X' does not exist`
-  failure so the converge still succeeds. A name that becomes valid later
-  (local user created, typo corrected, SSSD cache populated) is picked up on
-  the next scheduled converge without operator intervention.
-- Scheduled `ansible-pull` runs do not keep re-applying local sudo-group
-  membership from persisted bootstrap data.
+- Bootstrap-time sudo-group membership is **no longer driven by Ansible
+  variables**. The bootstrap script collects the usernames, and after the AD
+  join + SSSD are up it confirms each one resolves in AD (`getent passwd`) and
+  adds it with `gpasswd -a`. A name that does not resolve in AD is reported and
+  the operator is reprompted; the converge is not involved. Local accounts you
+  intend to create later are out of scope — create them and grant sudo by hand
+  after bootstrap.
 - `base_sudo_users` and `base_local_sudo_users` may still appear on older
   machines, but they are no longer acted on by normal converges.
 
@@ -190,12 +184,8 @@ The bootstrap script normally writes these into
 These values are then passed to Ansible as `--extra-vars` on every later run,
 which gives them high precedence.
 
-During the bootstrap-only AD enrollment converge, the script may also write
-these temporary values before immediately removing them from the final
-persisted state:
-
-- `base_manage_bootstrap_sudo_users`
-- `base_bootstrap_sudo_users`
+The AD-enrollment converge writes the same keys (only `base_ad_enroll` flips to
+`true`); sudo-group membership is no longer expressed as a bootstrap variable.
 
 Bootstrap rewrites the final stable state before it enables
 `ansible-pull.timer`, so timer failures should not leave the machine tracking a

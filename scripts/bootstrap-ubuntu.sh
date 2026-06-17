@@ -547,23 +547,7 @@ base_ad_enroll: false
 EOF
 }
 
-build_sudo_users_yaml() {
-  local sudo_user=""
-
-  if [[ "${#SUDO_USERS[@]}" -eq 0 ]]; then
-    return
-  fi
-
-  printf '%s' $'base_manage_bootstrap_sudo_users: true\nbase_bootstrap_sudo_users:'
-  for sudo_user in "${SUDO_USERS[@]}"; do
-    printf '\n  - %s' "${sudo_user}"
-  done
-}
-
 write_bootstrap_vars_ad_phase_state() {
-  local sudo_users_yaml
-  sudo_users_yaml="$(build_sudo_users_yaml)"
-
   write_bootstrap_file <<EOF
 base_ansible_pull_repo_url: "${REPO_URL}"
 base_ansible_pull_branch: "${BRANCH}"
@@ -573,18 +557,13 @@ base_ansible_pull_log_dir: "${LOG_DIR}"
 target_hostname: "${SHORT_HOSTNAME}"
 machine_type: "${MACHINE_TYPE}"
 base_ad_enroll: true
-${sudo_users_yaml}
 EOF
 }
 
-# The terminal success state deliberately omits the bootstrap sudo-user keys.
-# Adding the operator's listed users (AD and local) to the sudo group is a
-# one-shot step performed during the AD-phase converge; gpasswd makes that a
-# persistent OS-level group change, so the users stay in sudo afterward. We do
-# NOT carry the keys into the steady-state pull vars, because that would make
-# every scheduled converge re-assert the bootstrap-time list declaratively.
-# (The AD-phase state below still carries them so the enrolling converge adds
-# them once.)
+# The final state is identical to the AD-phase state today. Sudo group
+# membership is no longer expressed through bootstrap vars at all: it is a
+# one-shot OS-level change applied by add_bootstrap_sudo_users() after the
+# realm join, so nothing about it needs to be persisted for the role to read.
 write_bootstrap_vars_final_state() {
   write_bootstrap_file <<EOF
 base_ansible_pull_repo_url: "${REPO_URL}"
@@ -777,6 +756,65 @@ prompt_sudo_users() {
 
     echo "Error: invalid username(s): ${invalid_users[*]}. Use only letters, digits, '.', '-', '_'; start with a letter or '_'; max 32 chars. Please re-enter the list." >&2
     SUDO_USERS=()
+  done
+}
+
+# Resolve a username through NSS, retrying briefly. getent can lag for a few
+# seconds immediately after the realm join while the SSSD cache warms up, so a
+# valid AD account may not resolve on the first attempt; retry before declaring
+# it absent. Returns 0 if the name resolves, non-zero otherwise.
+sudo_user_resolves_in_ad() {
+  local user_name="${1:-}"
+  local attempt
+
+  for (( attempt = 1; attempt <= 5; attempt++ )); do
+    if getent passwd "${user_name}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+
+  return 1
+}
+
+# Add the operator's requested users to the local sudo group. Called only after
+# the realm join + SSSD are up, which is the first point at which an AD account
+# can be confirmed to exist. Any name that does not resolve in AD is reported by
+# name and the whole list is reprompted (interactive) rather than aborting the
+# converge. Local accounts created later are intentionally out of scope: create
+# them and grant sudo by hand after bootstrap.
+add_bootstrap_sudo_users() {
+  local user_name
+  local unresolved
+
+  while true; do
+    if [[ "${#SUDO_USERS[@]}" -eq 0 ]]; then
+      return
+    fi
+
+    unresolved=()
+    for user_name in "${SUDO_USERS[@]}"; do
+      if ! sudo_user_resolves_in_ad "${user_name}"; then
+        unresolved+=("${user_name}")
+      fi
+    done
+
+    if [[ "${#unresolved[@]}" -eq 0 ]]; then
+      break
+    fi
+
+    for user_name in "${unresolved[@]}"; do
+      echo "Error: user '${user_name}' does not exist in AD." >&2
+    done
+    echo "Re-enter the sudo user list; every name must resolve in AD. Local accounts you intend to create later are out of scope here — add them to sudo by hand afterward." >&2
+    prompt_sudo_users
+  done
+
+  for user_name in "${SUDO_USERS[@]}"; do
+    echo "Adding ${user_name} to the local sudo group"
+    if ! gpasswd -a "${user_name}" sudo; then
+      die "Error: failed to add '${user_name}' to the sudo group even though it resolves in AD. Inspect the gpasswd output above."
+    fi
   done
 }
 
@@ -1005,6 +1043,10 @@ main() {
     write_bootstrap_vars_final_state
     mark_final_state_written
   fi
+
+  # Sudo group membership is applied here, after the realm join + SSSD are up
+  # in either branch, so requested AD accounts can be confirmed to resolve.
+  add_bootstrap_sudo_users
 
   BOOTSTRAP_PHASE="enable_timer"
   enable_pull_timer
