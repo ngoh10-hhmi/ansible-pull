@@ -59,11 +59,14 @@ The rough flow is:
 8. run the baseline playbook once
 9. obtain AD credentials, write a temporary AD-phase bootstrap state, and run
    the AD enrollment converge
-10. if optional sudo users were requested, pass each name to `gpasswd -a`
-    against the local `sudo` group during that bootstrap-only AD converge —
-    unresolved names log a warning but do not fail the converge, so a typo
-    or not-yet-created local user can be corrected and re-applied later
-11. rewrite the final stable bootstrap vars without one-time sudo keys
+10. rewrite the final stable bootstrap vars
+11. if optional sudo users were requested, add each one to the local `sudo`
+    group with `gpasswd -a` in a post-join step of the bootstrap script — now
+    that the realm join and SSSD are up, AD names resolve. Every name must
+    resolve in AD (checked with `getent`); an unresolved name is reported and
+    the whole list is reprompted, and a `gpasswd` failure on a name that did
+    resolve is fatal. Local accounts you plan to create later are out of scope
+    here — grant them sudo by hand afterward.
 12. enable the timer and run a final package upgrade
 
 If the host is already joined to Active Directory (e.g. during a re-run of the bootstrap script), the script detects this and performs a single-phase converge directly with `base_ad_enroll: true`. This avoids prompting the operator for domain credentials, skips the first baseline run, and bypasses the reboot warning.
@@ -79,9 +82,10 @@ precedence is CLI flag > existing value > built-in default. A re-run will not
 silently wipe an operator-configured webhook. Pass `--reset-env` to ignore the
 existing file and rebuild `pull.env` purely from flags and defaults.
 
-The optional bootstrap sudo-user list is the exception: it is only written for
-the AD enrollment converge so SSSD/NSS can resolve those names first, and it is
-not kept in the final persisted bootstrap vars.
+The optional bootstrap sudo-user list is handled separately: it is never written
+into the persisted bootstrap vars at all. Instead the bootstrap script adds those
+users to the local `sudo` group once, in a post-join step, so the membership is a
+persistent OS-level change rather than something scheduled converges re-assert.
 
 Bootstrap now rewrites that final stable bootstrap state before it enables the
 timer. If timer enablement fails, bootstrap stops with a clear error instead of
@@ -237,9 +241,9 @@ In practice, that means:
 - bootstrap vars can override all of the above when the machine must remember a
   local decision
 
-One-time bootstrap-only inputs, such as the temporary sudo-user list used
-during the AD enrollment converge, are intentionally not kept in the final
-persisted file.
+The optional sudo-user list is not an Ansible variable at all: bootstrap applies
+it directly by adding those users to the local `sudo` group in a post-join step,
+so it never enters `/etc/ansible/bootstrap-vars.yml`.
 
 The sibling file `/etc/ansible/pull.env` is written through a shared helper
 that shell-escapes its values before later runtime scripts source it.
