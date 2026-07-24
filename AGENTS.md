@@ -122,14 +122,17 @@ Bootstrap flow:
 8. If already joined, it skips Phase 1 and the credential prompt, writes the final bootstrap vars directly (with `base_ad_enroll: true`), and runs a single converge.
 9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 
-Bootstrap-only sudo-user choices are applied once, during the AD enrollment
-converge: the sudo keys appear in the AD-phase `/etc/ansible/bootstrap-vars.yml`
-but are deliberately omitted from the final stable state, so scheduled converges
-do not keep re-asserting the bootstrap-time list. Adding a user to the local
-sudo group is a persistent OS-level change, so the membership remains after
-bootstrap. During that one converge every requested name is passed to
-`gpasswd -a` regardless of whether NSS could resolve it — an unresolved name
-produces a warning and a tolerated `gpasswd: user 'X' does not exist`.
+Bootstrap-time sudo-group membership is handled entirely by the bootstrap
+script (`add_bootstrap_sudo_users`), not the role, and runs once after the AD
+join + SSSD are up (the first point a domain account can be confirmed to
+exist). Each requested name is validated with `getent passwd` (retried for
+SSSD cache warmup) and added with `gpasswd -a`; a name that does not resolve in
+AD is reported and the whole list is reprompted interactively (it does not
+abort the converge), while a `gpasswd` failure on a name that *did* resolve is
+fatal. The membership is a persistent OS-level change, so it remains after
+bootstrap, and it is never written into `/etc/ansible/bootstrap-vars.yml`, so
+scheduled converges do not re-assert it. The old role-side
+`base_sudo_users` / NSS-tolerance path is gone — do not reintroduce it.
 
 Bootstrap now treats timer enablement as required. If `ansible-pull.timer`
 cannot be enabled, bootstrap should fail loudly rather than silently

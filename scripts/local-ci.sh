@@ -11,7 +11,10 @@
 # Usage from the repo root:
 #   ./scripts/local-ci.sh                 # both releases, sequentially
 #   MP_TARGET=22.04 ./scripts/local-ci.sh # one release only
-#   TEST_GIT_BRANCH=other ./scripts/...   # converge a branch other than HEAD
+#   TEST_GIT_BRANCH=other ./scripts/...   # label the working-tree snapshot as
+#                                         # this branch (must match BRANCH in
+#                                         # pull.env); it does not check out or
+#                                         # converge a different branch
 #
 # Or via make:
 #   make local-integration

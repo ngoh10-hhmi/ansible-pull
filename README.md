@@ -66,7 +66,8 @@ If you want a simple Git worktree layout for `testing` and `main`, read
 - `scripts/setup-dev.sh`: local developer setup helper
 - `scripts/check.sh`: local wrapper for repo checks
 - `scripts/run-ansible-pull.sh`: wrapper used by `systemd`
-- `scripts/apt-maintenance.sh`: optional full-upgrade helper for non-security maintenance
+- `scripts/apt-refresh.sh`: hourly APT package-list refresh helper
+- `scripts/upgrade-installed-apt-packages.sh`: targeted upgrade helper for managed packages
 - `docs/decision-guide.md`: GitHub vs internal Git hosting tradeoffs
 - `docs/onboarding.md`: how to add and bootstrap a new workstation
 - `docs/targeted-package-updates.md`: how to handle one-off package updates safely
@@ -207,8 +208,6 @@ Example:
 base_workstation_extra_packages:
   - htop
 ad_sudo_group: workstation-admins
-base_sudo_users:
-  - duckd-a
 ```
 
 Use `base_workstation_extra_packages` to add packages on one host without replacing the fleet baseline. Use `base_workstation_base_packages` in a host file only when you truly want to replace the whole base list.
@@ -248,7 +247,7 @@ The shared package list in `inventory/group_vars/all.yml` is now the main place 
 
 Important caveat:
 
-- Firefox on modern Ubuntu is usually a snap, so it is not updated by the APT tasks in this repo.
+- Firefox on modern Ubuntu is usually a snap, so it is not updated by the APT tasks in this repo. The dedicated `browser-package-updates` timer refreshes the Firefox snap daily via `snap refresh` when the snap is installed.
 - Google Chrome can be kept updated if you add Google's APT repository later.
 - `ansible-pull` keeps config current; Ubuntu's package tools perform the actual updates.
 

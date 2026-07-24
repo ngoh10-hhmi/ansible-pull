@@ -340,7 +340,7 @@ def test_browser_package_updates_timer_is_installed() -> None:
     assert service.contains(
         "ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list"
     )
-    assert service.contains("TimeoutStartSec=10m")
+    assert service.contains("TimeoutStartSec=30m")
     assert package_list.exists
     assert package_list.contains("^google-chrome-stable$")
     assert package_list.contains("^firefox$")

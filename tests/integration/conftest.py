@@ -71,8 +71,14 @@ def pytest_sessionfinish(session, exitstatus) -> None:
 # start, restore it.
 def _atexit_restore() -> None:
     current = _capture_bootstrap_vars()
-    if current != _INITIAL_BOOTSTRAP_CONTENT:
+    if current == _INITIAL_BOOTSTRAP_CONTENT:
+        return
+    if _INITIAL_BOOTSTRAP_CONTENT:
         _restore_bootstrap_vars(_INITIAL_BOOTSTRAP_CONTENT)
+    elif BOOTSTRAP_VARS_PATH.exists():
+        # The file didn't exist before any test ran; remove the test-created one
+        # instead of writing it back as an empty (invalid) file.
+        BOOTSTRAP_VARS_PATH.unlink(missing_ok=True)
 
 
 atexit.register(_atexit_restore)

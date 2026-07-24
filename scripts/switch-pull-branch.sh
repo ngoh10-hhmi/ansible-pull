@@ -170,7 +170,7 @@ validate_target_branch() {
   else
     # Branch switches are validated upfront to avoid persisting a branch that
     # the next scheduled run cannot fetch.
-    if ! git ls-remote --exit-code --heads "${REPO_URL}" "${BRANCH}" >/dev/null 2>&1; then
+    if ! git ls-remote --exit-code --heads "${REPO_URL}" "refs/heads/${BRANCH}" >/dev/null 2>&1; then
       die "Could not find branch '${BRANCH}' in repo '${REPO_URL}'. Refusing to update ansible-pull settings."
     fi
 

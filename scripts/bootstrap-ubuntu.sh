@@ -240,6 +240,7 @@ parse_args() {
         ;;
       --slack-notify-success)
         [[ -n "${2:-}" ]] || die "--slack-notify-success requires a value."
+        [[ "${2}" == "true" || "${2}" == "false" ]] || die "--slack-notify-success must be 'true' or 'false'."
         SLACK_NOTIFY_SUCCESS="${2:-}"
         shift 2
         ;;
