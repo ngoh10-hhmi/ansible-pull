@@ -11,6 +11,12 @@ BOOTSTRAP_VARS_FILE="/etc/ansible/bootstrap-vars.yml"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
 
+# When --run-now is used, wait up to this long for an in-flight scheduled
+# converge to release the pull lock so the immediate run actually converges
+# instead of exiting 0 as a locked no-op. Mirrors bootstrap's
+# BOOTSTRAP_LOCK_WAIT_SECONDS.
+readonly RUN_NOW_LOCK_WAIT_SECONDS=1800
+
 NEW_BRANCH=""
 NEW_COMMIT=""
 NEW_REPO_URL=""
@@ -170,7 +176,14 @@ validate_target_branch() {
   else
     # Branch switches are validated upfront to avoid persisting a branch that
     # the next scheduled run cannot fetch.
-    if ! git ls-remote --exit-code --heads "${REPO_URL}" "refs/heads/${BRANCH}" >/dev/null 2>&1; then
+    # Capture stderr (discarding the ref list on stdout via `2>&1 >/dev/null`)
+    # so an auth failure — e.g. an expired PAT — is surfaced instead of being
+    # misreported as a missing branch.
+    local ls_remote_err
+    if ! ls_remote_err="$(git ls-remote --exit-code --heads "${REPO_URL}" "refs/heads/${BRANCH}" 2>&1 >/dev/null)"; then
+      if [[ -n "${ls_remote_err}" ]]; then
+        die "Could not resolve branch '${BRANCH}' in repo '${REPO_URL}': ${ls_remote_err}. Refusing to update ansible-pull settings."
+      fi
       die "Could not find branch '${BRANCH}' in repo '${REPO_URL}'. Refusing to update ansible-pull settings."
     fi
 
@@ -212,13 +225,17 @@ write_bootstrap_vars() {
     fi
   } > "${tmp_file}"
 
+  # Validate the rewritten content BEFORE installing it, so a schema-rejected
+  # value (e.g. a bad branch name, or a malformed key an awk-preserved manual
+  # edit left behind) never lands in the live file the next scheduled converge
+  # reads. Clean up the temp file on both the reject and success paths.
+  if ! validate_bootstrap_vars_file "${tmp_file}"; then
+    rm -f "${tmp_file}"
+    die "Refusing to install invalid bootstrap-vars content into ${BOOTSTRAP_VARS_FILE}."
+  fi
+
   install -m 0600 "${tmp_file}" "${BOOTSTRAP_VARS_FILE}"
   rm -f "${tmp_file}"
-
-  # Catch a corrupt rewrite (e.g. a malformed key from a manual edit that
-  # awk preserved) before the next scheduled converge silently runs against
-  # bad config.
-  validate_bootstrap_vars_file "${BOOTSTRAP_VARS_FILE}"
 }
 
 print_summary() {
@@ -237,7 +254,10 @@ maybe_run_now() {
     fi
 
     echo "Running ansible-pull immediately..."
-    /usr/local/sbin/run-ansible-pull
+    # Wait out an in-flight timer converge rather than exiting 0 as a locked
+    # no-op, so a --run-now rollback actually takes effect during an incident.
+    ANSIBLE_PULL_LOCK_WAIT_SECONDS="${RUN_NOW_LOCK_WAIT_SECONDS}" \
+      /usr/local/sbin/run-ansible-pull
   else
     echo "No immediate run requested. Timer/manual runs will now use ref '${BRANCH}'."
   fi
