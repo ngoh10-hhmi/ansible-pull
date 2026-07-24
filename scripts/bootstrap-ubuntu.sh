@@ -341,8 +341,11 @@ validate_prerequisites() {
 install_bootstrap_dependencies() {
   export DEBIAN_FRONTEND=noninteractive
 
-  apt-get update
-  apt-get install -y \
+  # DPkg::Lock::Timeout=600 waits up to 10 minutes for the apt/dpkg lock instead
+  # of failing immediately, so first-boot unattended-upgrades lock contention
+  # can't kill bootstrap at step one. Matches the maintenance scripts.
+  apt-get update -o DPkg::Lock::Timeout=600
+  apt-get install -y -o DPkg::Lock::Timeout=600 \
     ansible \
     ca-certificates \
     curl \
@@ -729,6 +732,7 @@ prompt_machine_type() {
 prompt_sudo_users() {
   local sudo_users_input sanitized_input user_name
   local invalid_users
+  local -a sudo_user_tokens
 
   while true; do
     prompt_line "the sudo user list" sudo_users_input \
@@ -743,7 +747,12 @@ prompt_sudo_users() {
     sanitized_input="${sudo_users_input//,/ }"
     SUDO_USERS=()
     invalid_users=()
-    for user_name in ${sanitized_input}; do
+    # Split on whitespace WITHOUT pathname expansion: an unquoted
+    # ${sanitized_input} would glob a '*' in the entered list against the CWD.
+    # read -ra keeps the word-splitting we want (commas are already spaces) but
+    # never globs.
+    read -ra sudo_user_tokens <<<"${sanitized_input}"
+    for user_name in "${sudo_user_tokens[@]}"; do
       if is_valid_username "${user_name}"; then
         SUDO_USERS+=("${user_name}")
       else
@@ -982,7 +991,7 @@ run_final_upgrade() {
   # bootstrap-vars state are all in place, so a transient mirror/network
   # hiccup during the freshness upgrade should not fail the whole bootstrap.
   # Surface a clear warning and let the operator re-run apt later.
-  if ! { apt-get update && apt-get upgrade -y; }; then
+  if ! { apt-get update -o DPkg::Lock::Timeout=600 && apt-get upgrade -y -o DPkg::Lock::Timeout=600; }; then
     echo "Warning: final package upgrade did not complete cleanly. The machine is already enrolled and the ansible-pull timer is active; run 'sudo apt-get update && sudo apt-get upgrade' later to finish." >&2
   fi
 }
