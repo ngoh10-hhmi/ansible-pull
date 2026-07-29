@@ -62,6 +62,31 @@ Notes:
 - `base_workstation_apt_repos` entries are expected to include fields like
   `key_url`, `key_filename`, and `repo`.
 
+## Kernel Limit Variables
+
+| Variable | What it controls | Usually set in | Used by |
+| --- | --- | --- | --- |
+| `base_inotify_tuning_enabled` | Whether the role manages the per-UID inotify instance ceiling | `inventory/group_vars/all.yml` | inotify sysctl block in `roles/base/tasks/main.yml` |
+| `base_inotify_max_user_instances` | Value written for `fs.inotify.max_user_instances` (default 256, kernel default is 128) | `inventory/group_vars/all.yml` | `/etc/sysctl.d/60-ansible-inotify.conf` plus a `sysctl -w` on the running kernel |
+
+Notes:
+
+- The kernel default of 128 inotify instances per UID is too low for a desktop
+  session with Electron apps. At the ceiling, any `inotify_init1()` fails with
+  `EMFILE`, whose message text is the misleading "Too many open files" — see the
+  troubleshooting entry for the `apt update` symptom.
+- The role writes the drop-in *and* re-asserts the value on the running kernel,
+  so a drifted host is repaired by a converge rather than at next reboot.
+- 256 is deliberately modest. The ceiling itself reserves no memory, but it
+  bounds worst-case queued-event memory, and the fleet includes 16 GB and 32 GB
+  machines. Raise it per host with `inventory/host_vars/<hostname>.yml` if a
+  particular workstation needs more.
+- Setting `base_inotify_tuning_enabled: false` removes the drop-in but does not
+  lower the running value; that waits for a reboot, because lowering it live
+  could break processes already holding instances above the new ceiling.
+- `fs.inotify.max_user_watches` is a separate, much larger limit (65536 by
+  default) that this role does not manage.
+
 ## ansible-pull Runtime Variables
 
 | Variable | What it controls | Usually set in | Used by |

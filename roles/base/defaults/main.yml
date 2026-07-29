@@ -98,6 +98,33 @@ base_unattended_upgrade_package_blacklist:
   - 'nvidia-'
   - 'libnvidia-'
 
+# Per-UID inotify instance ceiling. The kernel default of 128 was sized for a
+# far smaller desktop than these workstations: a GNOME session plus the usual
+# Electron apps (Slack, browsers, editors, Dropbox) routinely holds 120+
+# instances for a single logged-in user. Once a UID is at the ceiling every
+# further inotify_init1() returns EMFILE, whose strerror text is the misleading
+# "Too many open files" -- so the symptom surfaces in unrelated tools rather
+# than in whatever leaked the instances. The common report is
+# "Failed to allocate directory watch: Too many open files" during
+# `sudo apt update`, emitted by the systemd-tty-ask-password-agent that
+# systemctl forks from apt's ESM Pre-Invoke hook.
+#
+# Raising the ceiling costs nothing at rest: this is a limit, not a
+# reservation, and an idle instance is a few hundred bytes of slab. The only
+# memory that scales with the ceiling is queued-but-unread events, bounded per
+# instance by fs.inotify.max_queued_events. Measured on Ubuntu 26.04, a single
+# saturated queue holds ~0.5 MB with short filenames and ~7 MB with 255-char
+# filenames, and that memory is memcg-accounted so a runaway is charged to the
+# offending slice and freed when the fd closes. At 256 the worst case is
+# ~128 MB to ~1.8 GB, which is why this stays modest rather than the 1024+ that
+# container hosts often use: the fleet includes 16 GB and 32 GB machines.
+#
+# fs.inotify.max_user_watches is deliberately left alone. It is a separate
+# limit (65536 by default) with a much larger per-unit cost, and real usage
+# sits far below it.
+base_inotify_tuning_enabled: true
+base_inotify_max_user_instances: 256
+
 # Minimum kmod version per Ubuntu release that carries the CVE-2026-31431
 # ("Copy Fail") mitigation. The fix lives in kmod's modprobe blacklist for
 # the affected algif_aead path, so the userspace package upgrade is what

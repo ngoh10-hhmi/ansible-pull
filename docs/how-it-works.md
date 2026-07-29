@@ -155,6 +155,8 @@ That role is the baseline HHMI workstation configuration. It handles:
 - `ansible-pull` environment files and helper scripts
 - systemd units and timers
 - APT refresh, targeted package-update timers, and unattended-upgrades policy
+- kernel limits that a desktop session outgrows (currently the per-UID inotify
+  instance ceiling)
 - optional local users and sudo-group access
 - Active Directory enrollment, SSSD configuration, and optional AD group sudoers
 

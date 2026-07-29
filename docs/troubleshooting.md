@@ -79,6 +79,59 @@ defaults (a clean-slate repair). Note a re-run still re-converges the whole
 machine; to only add a webhook, edit `/etc/ansible/pull.env` directly (see the
 Slack webhook guide) rather than re-running bootstrap.
 
+## "Too many open files" from apt, systemctl, or an editor
+
+Symptom, most often seen during `sudo apt update`:
+
+```
+Failed to allocate directory watch: Too many open files
+```
+
+This is not about file descriptors, and the command usually still succeeds. It
+is inotify **instance** exhaustion. `fs.inotify.max_user_instances` is enforced
+per UID; once a UID is at the ceiling, every further `inotify_init1()` returns
+`EMFILE`, and `EMFILE`'s message text is "Too many open files". The message in
+the `apt update` case comes from the `systemd-tty-ask-password-agent` that
+`systemctl` forks from apt's ESM `Pre-Invoke` hook
+(`/etc/apt/apt.conf.d/20apt-esm-hook.conf`), not from apt itself.
+
+Check the ceiling and what a UID is using:
+
+```bash
+# The limit. The role sets this to 256; the kernel default is 128.
+sysctl fs.inotify.max_user_instances
+
+# Instances held per process (run under sudo to include other users' processes).
+for p in /proc/[0-9]*; do
+  n=$(ls -l "$p/fd" 2>/dev/null | grep -c 'anon_inode:inotify')
+  [ "$n" -gt 0 ] && echo "$n $(cat "$p/comm") uid=$(stat -c %u "$p")"
+done | sort -rn | head -20
+```
+
+A GNOME session plus Electron apps (Slack, browsers, editors, Dropbox) commonly
+accounts for well over 100 instances spread across ~50 processes, each holding
+one or two.
+
+If the drop-in is missing or the running value is still 128, re-run
+`sudo /usr/local/sbin/run-ansible-pull` — the role rewrites
+`/etc/sysctl.d/60-ansible-inotify.conf` and re-asserts the value on the running
+kernel every converge:
+
+```bash
+cat /etc/sysctl.d/60-ansible-inotify.conf
+```
+
+If a host legitimately needs more than 256, raise
+`base_inotify_max_user_instances` in `inventory/host_vars/<hostname>.yml` rather
+than editing the drop-in by hand — a converge overwrites manual edits. Before
+raising it a long way, note that the ceiling bounds worst-case
+queued-but-unread event memory (roughly 0.5–7 MB per saturated instance), which
+matters on the 16 GB and 32 GB machines.
+
+Note that a value that keeps climbing back to the ceiling usually means a
+process is leaking inotify instances. Raising the limit buys time; the process
+in the per-UID listing above is the thing to fix.
+
 ## SSSD fails to start on Ubuntu 26.04+
 
 Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user, and later releases keep

@@ -83,6 +83,16 @@ base_slack_webhook_share_host: "prfs.hhmi.org"
 base_slack_webhook_share_name: "public"
 base_slack_webhook_share_file: 'test_henry\slack_webhook.txt'
 
+# Raise the per-UID inotify instance ceiling from the kernel default of 128.
+# A desktop session with the usual Electron apps exhausts 128 and then fails
+# unrelated tools with "Too many open files" (EMFILE from inotify_init1). 256 is
+# chosen to stay safe on the 16 GB and 32 GB machines in the fleet: the ceiling
+# reserves nothing, and the worst-case queued-event memory it permits is
+# ~128 MB-1.8 GB rather than the multi-GB a 1024 ceiling would allow.
+# See roles/base/defaults/main.yml for the measurements.
+base_inotify_tuning_enabled: true
+base_inotify_max_user_instances: 256
+
 base_workstation_enable_unattended_upgrades: true
 # The day-based APT periodic refresh stays off because systemd handles it
 # hourly.

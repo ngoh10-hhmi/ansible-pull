@@ -291,6 +291,21 @@ resets to that exact SHA on every run, so it never drifts forward.
   pass `DPkg::Lock::Timeout=600` so they wait up to 10 minutes for the dpkg
   lock instead of failing immediately when another timer-driven or
   ansible-pull APT operation is mid-flight.
+- The role raises `fs.inotify.max_user_instances` to
+  `base_inotify_max_user_instances` (256) through
+  `/etc/sysctl.d/60-ansible-inotify.conf` **and** a `sysctl -w` on the running
+  kernel, guarded by a drift check so the converge stays a no-op. Both halves are
+  required: the drop-in survives reboot, the live write repairs a drifted host
+  without waiting for one. The kernel default of 128 is exhausted by a normal
+  desktop session, and at the ceiling `inotify_init1()` fails with `EMFILE` —
+  reported as the misleading "Too many open files" from unrelated tools (see
+  `docs/troubleshooting.md`). The value stays modest because it bounds worst-case
+  queued-event memory and the fleet includes 16 GB and 32 GB machines; raise it
+  per host via `host_vars` rather than globally. Do not extend this block to
+  `fs.inotify.max_user_watches` without measuring — it is a separate limit with a
+  much larger per-unit cost, and real usage sits far below its 65536 default.
+  When `base_inotify_tuning_enabled` is false the role removes the drop-in but
+  deliberately does not lower the running value.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.

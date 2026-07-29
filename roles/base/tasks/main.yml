@@ -112,6 +112,52 @@
         cache_valid_time: 3600
       when: base_copy_fail_needs_update.rc == 0
 
+# Raise the per-UID inotify instance ceiling above the kernel default of 128.
+# See base_inotify_max_user_instances in defaults/main.yml for why, and for the
+# measured memory cost. Both halves matter: the drop-in makes it survive a
+# reboot, and the `sysctl -w` re-asserts it on the running kernel so a host that
+# drifted (manual sysctl, a stale conflicting drop-in) is repaired by a converge
+# instead of waiting for the next boot. The drift check keeps the converge a
+# no-op on hosts that are already correct.
+- name: Raise the per-UID inotify instance limit
+  when: base_inotify_tuning_enabled
+  block:
+    - name: Install inotify sysctl drop-in
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/60-ansible-inotify.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ansible-pull. Source of truth:
+          # inventory/group_vars/all.yml
+          fs.inotify.max_user_instances = {{ base_inotify_max_user_instances }}
+
+    - name: Read the running inotify instance limit
+      ansible.builtin.command: sysctl -n fs.inotify.max_user_instances
+      register: base_inotify_running
+      changed_when: false
+      check_mode: false
+
+    - name: Apply the inotify instance limit to the running kernel
+      ansible.builtin.command:
+        argv:
+          - sysctl
+          - -w
+          - "fs.inotify.max_user_instances={{ base_inotify_max_user_instances }}"
+      changed_when: true
+      when: base_inotify_running.stdout | trim | int != base_inotify_max_user_instances | int
+
+# Removing the drop-in stops the setting from being reapplied at boot, but it
+# does not lower the running kernel value -- that waits for the next reboot.
+# Lowering it live could immediately break processes already holding instances
+# above the new ceiling, so leaving it high until reboot is the safe direction.
+- name: Remove inotify sysctl drop-in when tuning is disabled
+  ansible.builtin.file:
+    path: /etc/sysctl.d/60-ansible-inotify.conf
+    state: absent
+  when: not base_inotify_tuning_enabled
+
 # The base role also manages the local ansible-pull runtime so the workstation
 # can keep converging itself after the first bootstrap run.
 - name: Ensure ansible-pull runtime directories exist

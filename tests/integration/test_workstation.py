@@ -155,6 +155,7 @@ def restore_default_pull_state(workspace: Path) -> None:
             "base_apt_refresh_enabled": True,
             "base_managed_package_updates_enabled": True,
             "base_browser_package_updates_enabled": True,
+            "base_inotify_tuning_enabled": True,
         },
     )
 
@@ -200,6 +201,50 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.contains("Unattended-Upgrade::Package-Blacklist")
     assert unattended.contains('"nvidia-";')
     assert unattended.contains('"libnvidia-";')
+
+
+def test_inotify_instance_limit_is_raised() -> None:
+    # Mirrors base_inotify_max_user_instances in inventory/group_vars/all.yml --
+    # keep both in sync. The role must both persist the setting (drop-in, so it
+    # survives a reboot) and apply it to the running kernel (so a converge
+    # repairs a drifted host without waiting for one).
+    expected = 256
+    drop_in = host.file("/etc/sysctl.d/60-ansible-inotify.conf")
+
+    assert drop_in.exists
+    assert drop_in.user == "root"
+    assert drop_in.group == "root"
+    assert oct(drop_in.mode) == "0o644"
+    assert drop_in.contains(f"fs.inotify.max_user_instances = {expected}")
+
+    running = host.run("sysctl -n fs.inotify.max_user_instances")
+    assert running.rc == 0
+    assert int(running.stdout.strip()) == expected
+
+    # max_user_watches is a separate limit the role deliberately does not touch.
+    assert not drop_in.contains("max_user_watches")
+
+
+def test_inotify_tuning_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-inotify-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_inotify_tuning_enabled": False},
+        )
+
+        assert not host.file("/etc/sysctl.d/60-ansible-inotify.conf").exists
+
+        # Disabling stops the setting from being reapplied at boot but must not
+        # lower the running kernel value: processes may already hold instances
+        # above a lower ceiling.
+        running = host.run("sysctl -n fs.inotify.max_user_instances")
+        assert int(running.stdout.strip()) == 256
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
 
 
 def test_copy_fail_kmod_mitigation_is_applied() -> None:
