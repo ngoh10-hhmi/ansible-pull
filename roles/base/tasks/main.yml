@@ -253,6 +253,20 @@
     group: root
     mode: "0644"
 
+# Installed unconditionally, and before the sbin helpers that source it, so the
+# apt helpers never land on a host without their library.
+- name: Install ansible-pull shared apt lock retry helper
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup(
+        'ansible.builtin.file',
+        playbook_dir + '/../scripts/lib/apt_lock.sh'
+      ) }}
+    dest: /usr/local/lib/ansible-pull/apt_lock.sh
+    owner: root
+    group: root
+    mode: "0644"
+
 - name: Install ansible-pull wrapper
   ansible.builtin.copy:
     content: >-

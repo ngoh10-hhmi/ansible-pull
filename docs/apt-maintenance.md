@@ -24,9 +24,13 @@ The base role applies focused CVE mitigations that don't fit the broader update 
 
 ## Handling APT Lock Contention
 
-Because `unattended-upgrades` and these maintenance scripts may attempt to run APT operations concurrently, all scripts in this repository use the `DPkg::Lock::Timeout=600` option.
+Because `unattended-upgrades` and these maintenance scripts may attempt to run APT operations concurrently, all scripts in this repository use the `DPkg::Lock::Timeout=600` option. This tells `apt` to wait up to **10 minutes** for the `dpkg` lock to become available rather than failing immediately, so scheduled tasks "wait in line" instead of requiring manual intervention.
 
-This tells `apt` to wait up to **10 minutes** for the `dpkg` lock to become available rather than failing immediately. This allows scheduled tasks to "wait in line" for a maintenance window instead of requiring complex retry logic or manual intervention.
+That option is not sufficient on its own. It covers only the dpkg frontend and administration locks taken by `apt-get install`. The `/var/lib/apt/lists/lock` that `apt-get update` takes, and the `/var/cache/apt/archives/lock`, ignore it entirely and fail immediately with `E: Could not get lock ...` and exit code 100.
+
+That gap is reachable from this repo's own schedule: `apt-refresh.timer` runs `hourly` with no jitter, so it fires exactly on the hour, while `managed-package-updates.timer` (03:00) and `browser-package-updates.timer` (04:00) each add up to 15 minutes of jitter. A small jitter draw puts the daily upgrade inside the hourly refresh's `apt-get update` and kills it before it upgrades anything.
+
+`scripts/lib/apt_lock.sh` closes it. Both `apt-refresh.sh` and `upgrade-installed-apt-packages.sh` call `apt_get_with_lock_retry` instead of `apt-get` directly; it re-runs the command while — and only while — apt reports lock contention, up to `APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in `APT_LOCK_RETRY_INTERVAL_SEC` (default 15) steps. Any other apt failure returns its original exit code on the first attempt, so a bad mirror or missing signing key still fails fast and still trips the unit's `OnFailure` Slack alert. `update-installed-browsers.sh` gets the same protection for its APT half by shelling out to `upgrade-installed-apt-packages`.
 
 ---
 

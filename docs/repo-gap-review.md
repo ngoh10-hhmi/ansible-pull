@@ -151,12 +151,20 @@ Current behavior:
   `DPkg::Lock::Timeout=600`.
 - [`scripts/upgrade-installed-apt-packages.sh`](../scripts/upgrade-installed-apt-packages.sh)
   also uses `DPkg::Lock::Timeout=600`.
+- Both additionally route every `apt-get` call through
+  `apt_get_with_lock_retry` in
+  [`scripts/lib/apt_lock.sh`](../scripts/lib/apt_lock.sh), because
+  `DPkg::Lock::Timeout` does not cover the `/var/lib/apt/lists/lock` used by
+  `apt-get update` or the archives lock. `managed-package-updates` hit exactly
+  that gap against the hourly `apt-refresh` on 2026-08-05.
 
 Why this still matters:
 
 - The daily managed-package and browser-package timers can still collide with
-  unattended upgrades or other APT work if this tolerance regresses later.
+  unattended upgrades, with each other, or with the hourly refresh.
 - The refresh helper and targeted-update helper should stay aligned.
+- `tests/test_apt_lock.py` fails if either helper regains a bare `apt-get`
+  call, so the tolerance cannot regress silently.
 
 Recommended change:
 

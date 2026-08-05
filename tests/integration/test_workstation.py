@@ -372,6 +372,31 @@ def test_managed_package_updates_timer_is_installed() -> None:
     assert host.run("systemctl is-enabled managed-package-updates.timer").stdout.strip() == "enabled"
 
 
+def test_apt_helpers_have_their_lock_retry_library() -> None:
+    """The apt helpers source apt_lock.sh at startup, so it must be on disk.
+
+    Without it they exit 1 immediately. With it, a maintenance timer that loses
+    the /var/lib/apt/lists/lock race with the hourly apt-refresh waits instead
+    of failing with exit 100 (observed 2026-08-05).
+    """
+    library = host.file("/usr/local/lib/ansible-pull/apt_lock.sh")
+
+    assert library.exists
+    assert library.user == "root"
+    assert library.mode == 0o644
+    assert library.contains("apt_get_with_lock_retry")
+
+    for helper in (
+        "/usr/local/sbin/apt-refresh",
+        "/usr/local/sbin/upgrade-installed-apt-packages",
+    ):
+        installed = host.file(helper)
+        assert installed.exists
+        assert installed.contains("apt_get_with_lock_retry")
+        # The library must actually resolve from the installed location.
+        assert host.run(f"bash -n {helper}").rc == 0
+
+
 def test_browser_package_updates_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/browser-package-updates.timer")
     service = host.file("/etc/systemd/system/browser-package-updates.service")

@@ -206,6 +206,58 @@ listed in `managed-package-updates.list`. A genuine failure therefore fails
 after restart` task. To extend the guard to another auth-critical service, add
 an entry to `base_managed_package_updates_restart_verify`.
 
+## Maintenance unit failed with "Could not get lock"
+
+Symptom: a maintenance unit fails within a second of starting, with exit code
+100 and nothing upgraded.
+
+```
+E: Could not get lock /var/lib/apt/lists/lock. It is held by process 130630 (apt-get)
+E: Unable to lock directory /var/lib/apt/lists/
+managed-package-updates.service: Main process exited, code=exited, status=100/n/a
+```
+
+Two maintenance timers ran `apt-get update` at the same moment.
+`apt-refresh.timer` is `hourly` with `RandomizedDelaySec=0`, so it fires exactly
+on the hour, while `managed-package-updates.timer` (03:00) and
+`browser-package-updates.timer` (04:00) each carry 15 minutes of jitter. A
+jitter draw of a few seconds lands inside the refresh run and loses the race for
+`/var/lib/apt/lists/lock`.
+
+The `DPkg::Lock::Timeout=600` the helpers pass does **not** prevent this. That
+option only covers the dpkg frontend/administration locks used by
+`apt-get install`; the lists lock and the archives lock ignore it and fail
+immediately. The helpers therefore wrap every `apt-get` call in
+`apt_get_with_lock_retry` (`scripts/lib/apt_lock.sh`), which waits up to
+`APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in `APT_LOCK_RETRY_INTERVAL_SEC`
+(default 15) steps for the lock to clear. A retry looks like this in the
+journal:
+
+```
+Another process holds the APT lock; retrying in 15s (waited 0s of 600s)
+```
+
+If you see the bare failure above with no retry line, the host is still running
+a pre-fix helper. Converge it and confirm:
+
+```bash
+sudo /usr/local/sbin/run-ansible-pull
+grep -q apt_get_with_lock_retry /usr/local/sbin/apt-refresh && echo refresh-patched
+grep -q apt_get_with_lock_retry /usr/local/sbin/upgrade-installed-apt-packages && echo upgrade-patched
+test -f /usr/local/lib/ansible-pull/apt_lock.sh && echo lib-present
+```
+
+Nothing is left broken by the failure itself — the run simply did no upgrades
+that night. Clear the failed unit state and catch up immediately with:
+
+```bash
+sudo systemctl start managed-package-updates.service
+```
+
+The retry deliberately fires only on lock contention. A unit that fails on an
+unreachable mirror, a missing signing key, or an unmet dependency still fails
+fast rather than retrying for ten minutes.
+
 ## Slack alerts for failed maintenance units
 
 The timer-driven maintenance units (`managed-package-updates`,

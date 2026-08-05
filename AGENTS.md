@@ -17,6 +17,7 @@ This repo manages Ubuntu workstations with `ansible-pull`.
 - `scripts/switch-pull-branch.sh`: updates branch/repo settings on an enrolled machine
 - `scripts/lib/envfile.sh`: reads/writes `/etc/ansible/pull.env` and validates the `bootstrap-vars.yml` schema
 - `scripts/lib/git_sync.sh`: checkout/clone helper; verifies HEAD matches the requested ref after every reset
+- `scripts/lib/apt_lock.sh`: retries `apt-get` while it is blocked on an APT lock the `DPkg::Lock::Timeout` option does not cover
 - `scripts/doctor.sh`: fast local and managed-host sanity check (invoked by `make doctor` and on workstations)
 - `scripts/apt-refresh.sh` / `scripts/upgrade-installed-apt-packages.sh` / `scripts/update-installed-browsers.sh`: helpers behind the hourly/daily maintenance timers
 - `docs/slack-webhook-setup.md`: operator guide for optional Slack notifications
@@ -288,9 +289,26 @@ resets to that exact SHA on every run, so it never drifts forward.
   snap does not block the others. Failures are aggregated and printed; the
   unit returns non-zero if any snap failed so systemd marks it failed.
 - The APT helpers (`apt-refresh.sh` and `upgrade-installed-apt-packages.sh`)
-  pass `DPkg::Lock::Timeout=600` so they wait up to 10 minutes for the dpkg
-  lock instead of failing immediately when another timer-driven or
-  ansible-pull APT operation is mid-flight.
+  pass `DPkg::Lock::Timeout=600` **and** route every `apt-get` invocation
+  through `apt_get_with_lock_retry` in `scripts/lib/apt_lock.sh`. Both are
+  needed, because `DPkg::Lock::Timeout` only covers the dpkg
+  frontend/administration locks taken by `apt-get install`. The
+  `/var/lib/apt/lists/lock` that `apt-get update` takes, and the
+  `/var/cache/apt/archives/lock`, ignore it and fail instantly with
+  `E: Could not get lock ...` and exit 100. That is a live collision, not a
+  theoretical one: `apt-refresh.timer` is `hourly` with no jitter so it fires
+  exactly on the hour, while `managed-package-updates.timer` (03:00) and
+  `browser-package-updates.timer` (04:00) carry 15 minutes of jitter, so a
+  small jitter draw lands inside the refresh run. Observed 2026-08-05 on
+  `ngoh10-ws2`: `managed-package-updates` started at 03:00:04, lost the lists
+  lock to `apt-refresh`, and exited 100 after 0.79s having upgraded nothing.
+  The retry wrapper waits `APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in
+  `APT_LOCK_RETRY_INTERVAL_SEC` (default 15) steps, and retries **only** on the
+  lock-contention signature so real apt failures stay fast and loud. Do not add
+  a bare `apt-get` call to either helper — `tests/test_apt_lock.py` fails the
+  build if you do. `update-installed-browsers.sh` inherits the fix for its APT
+  half because it shells out to `/usr/local/sbin/upgrade-installed-apt-packages`;
+  its snap half does not touch APT locks.
 - The role raises `fs.inotify.max_user_instances` to
   `base_inotify_max_user_instances` (256) through
   `/etc/sysctl.d/60-ansible-inotify.conf` **and** a `sysctl -w` on the running
