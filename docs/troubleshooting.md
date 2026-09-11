@@ -218,11 +218,12 @@ managed-package-updates.service: Main process exited, code=exited, status=100/n/
 ```
 
 Two maintenance timers ran `apt-get update` at the same moment.
-`apt-refresh.timer` is `hourly` with `RandomizedDelaySec=0`, so it fires exactly
-on the hour, while `managed-package-updates.timer` (03:00) and
-`browser-package-updates.timer` (04:00) each carry 15 minutes of jitter. A
-jitter draw of a few seconds lands inside the refresh run and loses the race for
-`/var/lib/apt/lists/lock`.
+`apt-refresh.timer` is `hourly` with `RandomizedDelaySec=10m`, while
+`managed-package-updates.timer` (03:00) and `browser-package-updates.timer`
+(04:00) each carry 15 minutes of jitter. The windows overlap, so one can start
+inside the refresh run and lose the race for `/var/lib/apt/lists/lock`. Before
+2026-09-11 the refresh carried no jitter at all and fired exactly on the hour,
+which made this collision much easier to hit.
 
 The `DPkg::Lock::Timeout=600` the helpers pass does **not** prevent this. That
 option only covers the dpkg frontend/administration locks used by
@@ -257,6 +258,53 @@ sudo systemctl start managed-package-updates.service
 The retry deliberately fires only on lock contention. A unit that fails on an
 unreachable mirror, a missing signing key, or an unmet dependency still fails
 fast rather than retrying for ten minutes.
+
+## Converge failed with "Failed to lock apt for exclusive operation"
+
+Symptom: an `ansible-pull` alert with `phase=run_playbook` and `exit_code=2`,
+where the failing task is an apt task and the message is:
+
+```
+Failed to lock apt for exclusive operation: Failed to lock directory
+/var/lib/apt/lists/: E:Could not get lock /var/lib/apt/lists/lock.
+It is held by process 1063904 (apt-get)
+```
+
+This is the same lock collision as the section above, seen from the Ansible
+side. The named PID is the giveaway: match it against the maintenance units in
+the journal and it will usually be `apt-refresh`'s `apt-get` child.
+
+```bash
+PID=1063904   # the PID quoted in the alert
+journalctl -u apt-refresh.service -u managed-package-updates.service \
+  -u browser-package-updates.service --since "-2h" | grep "$PID"
+systemctl show apt-refresh.service -p ExecMainStartTimestamp -p Result
+```
+
+`apt_get_with_lock_retry` does not apply here — it wraps the shell helpers, not
+the `ansible.builtin.apt` module. The module waits `lock_timeout` seconds
+instead, raised from its 60s default to 360s for the whole play by
+`module_defaults` in `playbooks/workstation.yml`.
+
+A run that still fails this way after the wait means the lock was held longer
+than 360s. That is not fully preventable by design: `apt-refresh.service` may
+run to its own `TimeoutStartSec=10m`, and the two package-update units may run
+to `TimeoutStartSec=30m`, so a holder can outlast any `lock_timeout` that still
+fits the converge's budget. Failing in that case is the intended outcome — a
+lock held that long is a real problem, not a scheduling blip. Find out why the
+holder was slow before raising the timeout; the usual cause is `apt-get update`
+stalling on an unreachable mirror rather than genuine contention. Check the alert's duration: roughly `2 x lock_timeout`
+means the `Install base Ubuntu packages` block and its `rescue` each waited the
+full budget, which is what a lock timeout looks like rather than a slow install.
+
+A related trap on hosts with no IPv6 default route: DNS still publishes AAAA
+records for the archive, so every fetch burns connect attempts before falling
+back to IPv4, and that alone can stretch a sub-second refresh into minutes.
+
+```bash
+ip -6 route show default   # empty means no IPv6 egress
+getent ahosts us.archive.ubuntu.com | grep -c ':'   # non-zero means AAAA served
+```
 
 ## Slack alerts for failed maintenance units
 

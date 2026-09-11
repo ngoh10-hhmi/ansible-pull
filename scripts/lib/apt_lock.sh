@@ -11,15 +11,23 @@
 #     /var/cache/apt/archives/lock do NOT. apt fails those immediately with
 #     "E: Could not get lock ... It is held by process N" and exits 100.
 #
-# apt-refresh.timer (hourly, no jitter, so exactly on the hour) and the daily
+# apt-refresh.timer (hourly plus up to 10 minutes of jitter) and the daily
 # managed-package-updates.timer / browser-package-updates.timer (03:00 and
-# 04:00 plus up to 15 minutes of jitter) all run "apt-get update". When a daily
-# timer draws a jitter of a few seconds it lands inside apt-refresh's ~1s run,
-# loses the lists lock race, and dies having upgraded nothing -- observed on
-# 2026-08-05, where managed-package-updates started at 03:00:04 while
-# apt-refresh held the lock and exited 100 after 0.79s. Retrying here gives the
-# unit the wait-for-the-other-guy behavior DPkg::Lock::Timeout was already
-# meant to provide.
+# 04:00 plus up to 15 minutes of jitter) all run "apt-get update". Their windows
+# overlap, so a daily timer can land inside apt-refresh's run, lose the lists
+# lock race, and die having upgraded nothing -- observed on 2026-08-05, where
+# managed-package-updates started at 03:00:04 while apt-refresh held the lock
+# and exited 100 after 0.79s. Retrying here gives the unit the
+# wait-for-the-other-guy behavior DPkg::Lock::Timeout was already meant to
+# provide.
+#
+# apt-refresh carried RandomizedDelaySec=0 until 2026-09-11, so back then it
+# fired at exactly :00 and the collision above needed only a few seconds of
+# jitter from the daily timer. The jitter added since spreads the starts but
+# does not remove the overlap, because a refresh blocked on an unreachable
+# mirror can run for minutes rather than its usual ~1s. This retry is still the
+# thing that makes the shell callers survive it; the Ansible-side equivalent is
+# the apt lock_timeout set in playbooks/workstation.yml.
 #
 # Retry is deliberately keyed to the lock-contention signature only, so genuine
 # apt failures (unreachable mirror, missing signing key, unmet dependency)

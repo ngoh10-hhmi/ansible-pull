@@ -181,7 +181,13 @@ def test_apt_refresh_timer_is_installed() -> None:
 
     assert timer.exists
     assert timer.contains("OnCalendar=hourly")
-    assert timer.contains("RandomizedDelaySec=0")
+    # Pins the shipped default, matching how the other timers are asserted here.
+    # The invariant that actually matters is the separate assertion below: this
+    # value must never go back to 0. A refresh pinned to exactly :00 shares a
+    # slot with the ansible-pull timer's own :00 tick, and a slow one fails the
+    # converge by holding /var/lib/apt/lists/lock across it.
+    assert timer.contains("RandomizedDelaySec=10m")
+    assert not timer.contains("RandomizedDelaySec=0")
     assert service.exists
     assert service.contains("ExecStart=/usr/local/sbin/apt-refresh")
     assert service.contains("TimeoutStartSec=10m")

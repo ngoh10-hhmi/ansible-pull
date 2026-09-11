@@ -39,9 +39,20 @@ base_ansible_pull_timer_on_calendar: "*:0/15"
 base_ansible_pull_randomized_delay_sec: "2m"
 
 # Hourly apt metadata refresh is driven by a dedicated systemd timer.
+#
+# The jitter stops the refresh firing at exactly :00 every hour, where it shared
+# a slot with the ansible-pull timer's own :00 tick. On 2026-09-11 a refresh
+# slowed to ~5 minutes by an unreachable mirror held /var/lib/apt/lists/lock
+# across the pull run that started at 03:01:39 and failed the converge.
+#
+# This only decorrelates the two timers, it cannot eliminate the overlap: a
+# degraded refresh can run for minutes and outlast any spread we pick here. The
+# lock_timeout in playbooks/workstation.yml is what actually lets the converge
+# survive the collision. Keep this under 15m so a delayed refresh does not slide
+# into the following ansible-pull tick as well.
 base_apt_refresh_enabled: true
 base_apt_refresh_timer_on_calendar: "hourly"
-base_apt_refresh_randomized_delay_sec: "0"
+base_apt_refresh_randomized_delay_sec: "10m"
 
 base_managed_package_updates_enabled: true
 base_managed_package_updates_timer_on_calendar: "*-*-* 03:00:00"

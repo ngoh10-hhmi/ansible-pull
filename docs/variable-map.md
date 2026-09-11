@@ -120,7 +120,7 @@ Notes:
 | --- | --- | --- | --- |
 | `base_apt_refresh_enabled` | Whether the hourly `apt-refresh.timer` is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
 | `base_apt_refresh_timer_on_calendar` | Schedule for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
-| `base_apt_refresh_randomized_delay_sec` | Delay spread for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
+| `base_apt_refresh_randomized_delay_sec` | Delay spread for apt metadata refresh (keep non-zero; `0` pins the refresh to the top of the hour alongside the `ansible-pull` timer's `:00` tick) | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
 | `base_managed_package_updates_enabled` | Whether the daily managed-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
 | `base_managed_package_updates_timer_on_calendar` | Schedule for managed baseline package upgrades | role defaults unless policy changes | `roles/base/templates/managed-package-updates.timer.j2` |
 | `base_browser_package_updates_enabled` | Whether the daily browser-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
@@ -144,6 +144,12 @@ Notes:
   without taking over general snap refresh policy.
 - `base_workstation_update_package_lists_days` is set to `0` in the shared
   baseline because the dedicated `apt-refresh.timer` handles that path instead.
+- APT lock contention between these timers and the converge is handled outside
+  this table: shell helpers use `apt_get_with_lock_retry`
+  (`scripts/lib/apt_lock.sh`), while `ansible.builtin.apt` tasks rely on the
+  `lock_timeout` set via `module_defaults` in `playbooks/workstation.yml`.
+  That value is not a role variable, so changing a timer's spread here does not
+  change it. See `docs/apt-maintenance.md` for the bounds on raising it.
 
 ## Local User Variables
 

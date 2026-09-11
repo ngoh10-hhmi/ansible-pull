@@ -296,10 +296,12 @@ resets to that exact SHA on every run, so it never drifts forward.
   `/var/lib/apt/lists/lock` that `apt-get update` takes, and the
   `/var/cache/apt/archives/lock`, ignore it and fail instantly with
   `E: Could not get lock ...` and exit 100. That is a live collision, not a
-  theoretical one: `apt-refresh.timer` is `hourly` with no jitter so it fires
-  exactly on the hour, while `managed-package-updates.timer` (03:00) and
-  `browser-package-updates.timer` (04:00) carry 15 minutes of jitter, so a
-  small jitter draw lands inside the refresh run. Observed 2026-08-05 on
+  theoretical one: `apt-refresh.timer` is `hourly` with up to 10 minutes of
+  jitter, while `managed-package-updates.timer` (03:00) and
+  `browser-package-updates.timer` (04:00) carry 15 minutes of jitter, so their
+  windows overlap and one can start inside the refresh run. The refresh had no
+  jitter at all until 2026-09-11 and fired exactly on the hour, which is how the
+  collision below was reached. Observed 2026-08-05 on
   `ngoh10-ws2`: `managed-package-updates` started at 03:00:04, lost the lists
   lock to `apt-refresh`, and exited 100 after 0.79s having upgraded nothing.
   The retry wrapper waits `APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in
@@ -309,6 +311,19 @@ resets to that exact SHA on every run, so it never drifts forward.
   build if you do. `update-installed-browsers.sh` inherits the fix for its APT
   half because it shells out to `/usr/local/sbin/upgrade-installed-apt-packages`;
   its snap half does not touch APT locks.
+- That wrapper covers the **shell** helpers only. `ansible.builtin.apt` tasks
+  have their own mechanism: the module waits `lock_timeout` seconds for an APT
+  lock and then fails the task, defaulting to a too-short 60s. The play sets
+  `lock_timeout: 360` for every apt task via `module_defaults` in
+  `playbooks/workstation.yml` — play level, so role tasks and role handlers are
+  covered too. Keep it there rather than per task, and keep it bounded: the
+  module busy-spins while waiting, the `Install base Ubuntu packages`
+  block/`rescue` pair can pay it twice, and 2 x the value has to fit inside
+  `ansible-pull.service`'s `TimeoutStartSec=30m` and the 1800s
+  `ANSIBLE_PULL_LOCK_WAIT_SECONDS` budget that `bootstrap-ubuntu.sh` and
+  `switch-pull-branch.sh` block for. Added 2026-09-11 after a ~5 minute
+  mirror-stalled refresh held the lists lock across a converge and failed it
+  with `Failed to lock apt for exclusive operation`.
 - The role raises `fs.inotify.max_user_instances` to
   `base_inotify_max_user_instances` (256) through
   `/etc/sysctl.d/60-ansible-inotify.conf` **and** a `sysctl -w` on the running

@@ -157,6 +157,13 @@ Current behavior:
   `DPkg::Lock::Timeout` does not cover the `/var/lib/apt/lists/lock` used by
   `apt-get update` or the archives lock. `managed-package-updates` hit exactly
   that gap against the hourly `apt-refresh` on 2026-08-05.
+- The converge itself is covered by a different mechanism, since
+  `apt_get_with_lock_retry` wraps shell helpers and not the
+  `ansible.builtin.apt` module: `playbooks/workstation.yml` sets
+  `lock_timeout: 360` for the whole play via `module_defaults`. Added
+  2026-09-11 after a mirror-stalled `apt-refresh` held the lists lock across a
+  scheduled run and failed it with `Failed to lock apt for exclusive
+  operation`.
 
 Why this still matters:
 
