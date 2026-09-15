@@ -79,6 +79,59 @@ defaults (a clean-slate repair). Note a re-run still re-converges the whole
 machine; to only add a webhook, edit `/etc/ansible/pull.env` directly (see the
 Slack webhook guide) rather than re-running bootstrap.
 
+## "Too many open files" from apt, systemctl, or an editor
+
+Symptom, most often seen during `sudo apt update`:
+
+```
+Failed to allocate directory watch: Too many open files
+```
+
+This is not about file descriptors, and the command usually still succeeds. It
+is inotify **instance** exhaustion. `fs.inotify.max_user_instances` is enforced
+per UID; once a UID is at the ceiling, every further `inotify_init1()` returns
+`EMFILE`, and `EMFILE`'s message text is "Too many open files". The message in
+the `apt update` case comes from the `systemd-tty-ask-password-agent` that
+`systemctl` forks from apt's ESM `Pre-Invoke` hook
+(`/etc/apt/apt.conf.d/20apt-esm-hook.conf`), not from apt itself.
+
+Check the ceiling and what a UID is using:
+
+```bash
+# The limit. The role sets this to 256; the kernel default is 128.
+sysctl fs.inotify.max_user_instances
+
+# Instances held per process (run under sudo to include other users' processes).
+for p in /proc/[0-9]*; do
+  n=$(ls -l "$p/fd" 2>/dev/null | grep -c 'anon_inode:inotify')
+  [ "$n" -gt 0 ] && echo "$n $(cat "$p/comm") uid=$(stat -c %u "$p")"
+done | sort -rn | head -20
+```
+
+A GNOME session plus Electron apps (Slack, browsers, editors, Dropbox) commonly
+accounts for well over 100 instances spread across ~50 processes, each holding
+one or two.
+
+If the drop-in is missing or the running value is still 128, re-run
+`sudo /usr/local/sbin/run-ansible-pull` — the role rewrites
+`/etc/sysctl.d/60-ansible-inotify.conf` and re-asserts the value on the running
+kernel every converge:
+
+```bash
+cat /etc/sysctl.d/60-ansible-inotify.conf
+```
+
+If a host legitimately needs more than 256, raise
+`base_inotify_max_user_instances` in `inventory/host_vars/<hostname>.yml` rather
+than editing the drop-in by hand — a converge overwrites manual edits. Before
+raising it a long way, note that the ceiling bounds worst-case
+queued-but-unread event memory (roughly 0.5–7 MB per saturated instance), which
+matters on the 16 GB and 32 GB machines.
+
+Note that a value that keeps climbing back to the ceiling usually means a
+process is leaking inotify instances. Raising the limit buys time; the process
+in the per-UID listing above is the thing to fix.
+
 ## SSSD fails to start on Ubuntu 26.04+
 
 Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user, and later releases keep
@@ -152,6 +205,106 @@ listed in `managed-package-updates.list`. A genuine failure therefore fails
 (see below), and is also caught by the next converge's `Verify SSSD is active
 after restart` task. To extend the guard to another auth-critical service, add
 an entry to `base_managed_package_updates_restart_verify`.
+
+## Maintenance unit failed with "Could not get lock"
+
+Symptom: a maintenance unit fails within a second of starting, with exit code
+100 and nothing upgraded.
+
+```
+E: Could not get lock /var/lib/apt/lists/lock. It is held by process 130630 (apt-get)
+E: Unable to lock directory /var/lib/apt/lists/
+managed-package-updates.service: Main process exited, code=exited, status=100/n/a
+```
+
+Two maintenance timers ran `apt-get update` at the same moment.
+`apt-refresh.timer` is `hourly` with `RandomizedDelaySec=10m`, while
+`managed-package-updates.timer` (03:00) and `browser-package-updates.timer`
+(04:00) each carry 15 minutes of jitter. The windows overlap, so one can start
+inside the refresh run and lose the race for `/var/lib/apt/lists/lock`. Before
+2026-09-11 the refresh carried no jitter at all and fired exactly on the hour,
+which made this collision much easier to hit.
+
+The `DPkg::Lock::Timeout=600` the helpers pass does **not** prevent this. That
+option only covers the dpkg frontend/administration locks used by
+`apt-get install`; the lists lock and the archives lock ignore it and fail
+immediately. The helpers therefore wrap every `apt-get` call in
+`apt_get_with_lock_retry` (`scripts/lib/apt_lock.sh`), which waits up to
+`APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in `APT_LOCK_RETRY_INTERVAL_SEC`
+(default 15) steps for the lock to clear. A retry looks like this in the
+journal:
+
+```
+Another process holds the APT lock; retrying in 15s (waited 0s of 600s)
+```
+
+If you see the bare failure above with no retry line, the host is still running
+a pre-fix helper. Converge it and confirm:
+
+```bash
+sudo /usr/local/sbin/run-ansible-pull
+grep -q apt_get_with_lock_retry /usr/local/sbin/apt-refresh && echo refresh-patched
+grep -q apt_get_with_lock_retry /usr/local/sbin/upgrade-installed-apt-packages && echo upgrade-patched
+test -f /usr/local/lib/ansible-pull/apt_lock.sh && echo lib-present
+```
+
+Nothing is left broken by the failure itself — the run simply did no upgrades
+that night. Clear the failed unit state and catch up immediately with:
+
+```bash
+sudo systemctl start managed-package-updates.service
+```
+
+The retry deliberately fires only on lock contention. A unit that fails on an
+unreachable mirror, a missing signing key, or an unmet dependency still fails
+fast rather than retrying for ten minutes.
+
+## Converge failed with "Failed to lock apt for exclusive operation"
+
+Symptom: an `ansible-pull` alert with `phase=run_playbook` and `exit_code=2`,
+where the failing task is an apt task and the message is:
+
+```
+Failed to lock apt for exclusive operation: Failed to lock directory
+/var/lib/apt/lists/: E:Could not get lock /var/lib/apt/lists/lock.
+It is held by process 1063904 (apt-get)
+```
+
+This is the same lock collision as the section above, seen from the Ansible
+side. The named PID is the giveaway: match it against the maintenance units in
+the journal and it will usually be `apt-refresh`'s `apt-get` child.
+
+```bash
+PID=1063904   # the PID quoted in the alert
+journalctl -u apt-refresh.service -u managed-package-updates.service \
+  -u browser-package-updates.service --since "-2h" | grep "$PID"
+systemctl show apt-refresh.service -p ExecMainStartTimestamp -p Result
+```
+
+`apt_get_with_lock_retry` does not apply here — it wraps the shell helpers, not
+the `ansible.builtin.apt` module. The module waits `lock_timeout` seconds
+instead, raised from its 60s default to 360s for the whole play by
+`module_defaults` in `playbooks/workstation.yml`.
+
+A run that still fails this way after the wait means the lock was held longer
+than 360s. That is not fully preventable by design: `apt-refresh.service` may
+run to its own `TimeoutStartSec=10m`, and the two package-update units may run
+to `TimeoutStartSec=30m`, so a holder can outlast any `lock_timeout` that still
+fits the converge's budget. Failing in that case is the intended outcome — a
+lock held that long is a real problem, not a scheduling blip. Find out why the
+holder was slow before raising the timeout; the usual cause is `apt-get update`
+stalling on an unreachable mirror rather than genuine contention. Check the alert's duration: roughly `2 x lock_timeout`
+means the `Install base Ubuntu packages` block and its `rescue` each waited the
+full budget, which is what a lock timeout looks like rather than a slow install.
+
+A related trap on hosts with no IPv6 default route: DNS still publishes AAAA
+records for the archive, so every fetch burns connect attempts before falling
+back to IPv4, and that alone can stretch a sub-second refresh into minutes.
+
+```bash
+ip -6 route show default   # empty means no IPv6 egress
+getent ahosts us.archive.ubuntu.com | grep -c ':'   # non-zero means AAAA served
+```
 
 ## Slack alerts for failed maintenance units
 

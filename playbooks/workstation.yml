@@ -3,5 +3,26 @@
   hosts: all
   connection: local
   become: true
+  # Every ansible.builtin.apt task in this play waits this long for an APT lock
+  # before giving up. The module default is 60s, which is shorter than a slow
+  # apt-refresh.service run: on 2026-09-11 an unreachable archive mirror
+  # stretched the hourly refresh from its usual sub-second run to ~5 minutes,
+  # and it held /var/lib/apt/lists/lock the whole time. The install block and
+  # its rescue each burned their 60s and failed the converge with "Failed to
+  # lock apt for exclusive operation".
+  #
+  # This is the Ansible-side counterpart to apt_get_with_lock_retry
+  # (scripts/lib/apt_lock.sh), which already gives the shell helpers the same
+  # wait-for-the-other-guy behavior. Set at play level rather than per task so
+  # the role's handler and its later apt tasks are covered too, not just the
+  # install block that happened to lose the race first.
+  #
+  # Keep the value bounded. The module implements the wait as a busy spin with
+  # no sleep between attempts, and the block/rescue pair can pay it twice, so
+  # 2 x 360s has to stay well inside the 1800s ANSIBLE_PULL_LOCK_WAIT_SECONDS
+  # budget that bootstrap-ubuntu.sh and switch-pull-branch.sh block for.
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 360
   roles:
     - role: base

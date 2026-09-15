@@ -13,7 +13,7 @@ doctor:
 	./scripts/doctor.sh
 
 lint: guard-venv
-	PRE_COMMIT_HOME=.pre-commit-cache $(ACTIVATE) && pre-commit run --all-files
+	$(ACTIVATE) && PRE_COMMIT_HOME=.pre-commit-cache pre-commit run --all-files
 
 unit-test: guard-venv
 	$(ACTIVATE) && python -m pytest -q tests/test_*.py

@@ -3,6 +3,27 @@ set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SHARED_LIB_DIR="/usr/local/lib/ansible-pull"
+
+source_script_lib() {
+  local filename="$1"
+  local candidate=""
+
+  for candidate in "${SCRIPT_DIR}/lib/${filename}" "${SHARED_LIB_DIR}/${filename}"; do
+    if [[ -f "${candidate}" ]]; then
+      # shellcheck disable=SC1090
+      source "${candidate}"
+      return 0
+    fi
+  done
+
+  echo "Missing helper library ${filename}" >&2
+  exit 1
+}
+
+source_script_lib "apt_lock.sh"
+
 LABEL=""
 LIST_FILE=""
 # Each entry is "<service>:<pkg>[,<pkg>...]"; see --restart-verify below.
@@ -206,7 +227,10 @@ run_upgrade() {
   fi
 
   echo "Refreshing APT metadata for ${LABEL} updates"
-  apt-get update -o DPkg::Lock::Timeout=600
+  # DPkg::Lock::Timeout does not cover /var/lib/apt/lists/lock, which is the
+  # lock "apt-get update" actually takes, so the retry wrapper supplies the
+  # waiting behavior when a concurrent maintenance timer holds it.
+  apt_get_with_lock_retry update -o DPkg::Lock::Timeout=600
 
   local upgradable_packages=()
   local skipped_packages=()
@@ -264,8 +288,9 @@ run_upgrade() {
   # machine and cannot silently pull in unintended packages.
   # DPkg::Lock::Timeout=600 waits up to 10 minutes for the dpkg lock rather
   # than failing immediately if unattended-upgrades or another apt process is
-  # running concurrently.
-  apt-get install -y --only-upgrade -o DPkg::Lock::Timeout=600 "${upgradable_packages[@]}"
+  # running concurrently. That option does not cover the archives/download
+  # lock, so this call goes through the retry wrapper as well.
+  apt_get_with_lock_retry install -y --only-upgrade -o DPkg::Lock::Timeout=600 "${upgradable_packages[@]}"
 
   if (( ${#RESTART_VERIFY_SPECS[@]} > 0 )); then
     local version_after=""

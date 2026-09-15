@@ -332,6 +332,9 @@ notify_slack() {
 
   payload="$(build_slack_payload "${status}" "ansible-pull on ${HOSTNAME_SHORT}" "${msg}")"
 
+  # Pass the webhook URL to curl via a config file on a process-substitution fd
+  # rather than argv, so the secret is not exposed in /proc/<pid>/cmdline to
+  # other local users. The payload (--data) is not sensitive.
   if curl \
     --silent \
     --show-error \
@@ -343,7 +346,7 @@ notify_slack() {
     -X POST \
     -H 'Content-type: application/json' \
     --data "${payload}" \
-    "${SLACK_WEBHOOK_URL}"; then
+    --config <(printf 'url = "%s"\n' "${SLACK_WEBHOOK_URL}"); then
     log "Slack notification sent successfully."
   else
     log "Warning: Failed to send Slack notification."

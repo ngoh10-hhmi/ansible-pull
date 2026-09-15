@@ -39,45 +39,39 @@ Suggested validation:
 - Keep script-level tests that prove `REPO_URL`, `PLAYBOOK`, `DEST`, `LOG_DIR`,
   and Slack-related values survive a write/load round-trip.
 
-### 2. Sudo-user naming and behavior drifted from intent
+### 2. Sudo-user handling now lives in the bootstrap script (resolved)
 
 Update:
 
-- We are keeping the historical `/etc/group` model for now.
-- The fix is to stop using the `user` module here and instead add requested
-  usernames to the local `sudo` group after the AD join and SSSD steps have
-  completed.
+- This gap is closed. The old role-side path — which used the Ansible `user`
+  module and tolerated names NSS could not resolve — has been removed.
 
 Current behavior:
 
-- Bootstrap can carry a temporary sudo-user list into the AD enrollment
-  converge.
-- The role now waits until after the AD join and SSSD configuration before
-  resolving those usernames through NSS.
-- The role updates the local `sudo` group with `gpasswd` instead of using the
-  Ansible `user` module.
-- The final persisted bootstrap vars intentionally omit that temporary sudo-user
-  list so later scheduled converges do not keep re-applying local sudo-group
-  membership.
+- Sudo-group membership is granted entirely by the bootstrap script's
+  `add_bootstrap_sudo_users`, not the role. It runs once, after the AD join and
+  SSSD are up, so requested AD names can be resolved.
+- Each requested name is resolved with `getent` (retried for SSSD cache
+  warmup). A name that does not resolve is reported and the whole list is
+  reprompted interactively; a `gpasswd` failure on a name that *did* resolve is
+  fatal.
+- Local accounts to be created later are out of scope: `gpasswd` cannot add an
+  account that does not exist yet, so create the user and run
+  `usermod -aG sudo <user>` by hand after bootstrap.
+- The sudo-user list is never written into `/etc/ansible/bootstrap-vars.yml`, so
+  scheduled converges never re-assert it. `base_sudo_users` /
+  `base_local_sudo_users` are dead legacy variables and are no longer consulted.
 
 Why this was a gap:
 
-- The old implementation was more permissive than bootstrap.
-- A typo in `base_local_sudo_users` could silently create a new local account.
-- The operator-facing docs did not match the actual convergence behavior.
-
-Recommended change:
-
-- Keep the historical `/etc/group` model for now.
-- Treat the bootstrap-only sudo-user list as "usernames that must resolve
-  through NSS" before the local `sudo` group is updated.
-- Do not persist those one-time bootstrap sudo-user choices into the final
-  scheduled-run state.
+- The old role-side implementation was more permissive than bootstrap: a typo in
+  `base_local_sudo_users` could silently create a new local account, and the
+  operator-facing docs did not match the actual behavior.
 
 Suggested validation:
 
-- Add integration or script-focused coverage for both an existing user and a
-  missing user path.
+- Keep script-focused coverage for both a resolvable name and an unresolvable
+  (reprompt) path.
 
 ### 3. Slack delivery is useful and more hardened than before
 
@@ -157,12 +151,27 @@ Current behavior:
   `DPkg::Lock::Timeout=600`.
 - [`scripts/upgrade-installed-apt-packages.sh`](../scripts/upgrade-installed-apt-packages.sh)
   also uses `DPkg::Lock::Timeout=600`.
+- Both additionally route every `apt-get` call through
+  `apt_get_with_lock_retry` in
+  [`scripts/lib/apt_lock.sh`](../scripts/lib/apt_lock.sh), because
+  `DPkg::Lock::Timeout` does not cover the `/var/lib/apt/lists/lock` used by
+  `apt-get update` or the archives lock. `managed-package-updates` hit exactly
+  that gap against the hourly `apt-refresh` on 2026-08-05.
+- The converge itself is covered by a different mechanism, since
+  `apt_get_with_lock_retry` wraps shell helpers and not the
+  `ansible.builtin.apt` module: `playbooks/workstation.yml` sets
+  `lock_timeout: 360` for the whole play via `module_defaults`. Added
+  2026-09-11 after a mirror-stalled `apt-refresh` held the lists lock across a
+  scheduled run and failed it with `Failed to lock apt for exclusive
+  operation`.
 
 Why this still matters:
 
 - The daily managed-package and browser-package timers can still collide with
-  unattended upgrades or other APT work if this tolerance regresses later.
+  unattended upgrades, with each other, or with the hourly refresh.
 - The refresh helper and targeted-update helper should stay aligned.
+- `tests/test_apt_lock.py` fails if either helper regains a bare `apt-get`
+  call, so the tolerance cannot regress silently.
 
 Recommended change:
 
@@ -177,12 +186,14 @@ Suggested validation:
 ## Recommended Change Order
 
 1. Harden env-file serialization and add branch validation.
-2. Align sudo-user naming and behavior with the documented contract.
+2. Align sudo-user naming and behavior with the documented contract. (Done —
+   the grant now lives in the bootstrap post-join step; see section 2.)
 3. Harden Slack delivery and add coverage for notification settings.
 4. Add a lightweight script-test layer.
 5. Improve APT maintenance lock tolerance.
 
 ## Review Note
 
-I would treat items 1, 2, and 5 as the best next tranche because they reduce
-operator surprise without changing the repo's overall model.
+I would treat items 1 and 5 as the best next tranche because they reduce
+operator surprise without changing the repo's overall model. (Item 2 is now
+done.)
