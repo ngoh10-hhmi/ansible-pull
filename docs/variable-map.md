@@ -62,6 +62,31 @@ Notes:
 - `base_workstation_apt_repos` entries are expected to include fields like
   `key_url`, `key_filename`, and `repo`.
 
+## Kernel Limit Variables
+
+| Variable | What it controls | Usually set in | Used by |
+| --- | --- | --- | --- |
+| `base_inotify_tuning_enabled` | Whether the role manages the per-UID inotify instance ceiling | `inventory/group_vars/all.yml` | inotify sysctl block in `roles/base/tasks/main.yml` |
+| `base_inotify_max_user_instances` | Value written for `fs.inotify.max_user_instances` (default 256, kernel default is 128) | `inventory/group_vars/all.yml` | `/etc/sysctl.d/60-ansible-inotify.conf` plus a `sysctl -w` on the running kernel |
+
+Notes:
+
+- The kernel default of 128 inotify instances per UID is too low for a desktop
+  session with Electron apps. At the ceiling, any `inotify_init1()` fails with
+  `EMFILE`, whose message text is the misleading "Too many open files" — see the
+  troubleshooting entry for the `apt update` symptom.
+- The role writes the drop-in *and* re-asserts the value on the running kernel,
+  so a drifted host is repaired by a converge rather than at next reboot.
+- 256 is deliberately modest. The ceiling itself reserves no memory, but it
+  bounds worst-case queued-event memory, and the fleet includes 16 GB and 32 GB
+  machines. Raise it per host with `inventory/host_vars/<hostname>.yml` if a
+  particular workstation needs more.
+- Setting `base_inotify_tuning_enabled: false` removes the drop-in but does not
+  lower the running value; that waits for a reboot, because lowering it live
+  could break processes already holding instances above the new ceiling.
+- `fs.inotify.max_user_watches` is a separate, much larger limit (65536 by
+  default) that this role does not manage.
+
 ## ansible-pull Runtime Variables
 
 | Variable | What it controls | Usually set in | Used by |
@@ -95,7 +120,7 @@ Notes:
 | --- | --- | --- | --- |
 | `base_apt_refresh_enabled` | Whether the hourly `apt-refresh.timer` is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
 | `base_apt_refresh_timer_on_calendar` | Schedule for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
-| `base_apt_refresh_randomized_delay_sec` | Delay spread for apt metadata refresh | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
+| `base_apt_refresh_randomized_delay_sec` | Delay spread for apt metadata refresh (keep non-zero; `0` pins the refresh to the top of the hour alongside the `ansible-pull` timer's `:00` tick) | role defaults unless policy changes | `roles/base/templates/apt-refresh.timer.j2` |
 | `base_managed_package_updates_enabled` | Whether the daily managed-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
 | `base_managed_package_updates_timer_on_calendar` | Schedule for managed baseline package upgrades | role defaults unless policy changes | `roles/base/templates/managed-package-updates.timer.j2` |
 | `base_browser_package_updates_enabled` | Whether the daily browser-package update timer is installed and enabled | `inventory/group_vars/all.yml` | conditional tasks in `roles/base/tasks/main.yml` |
@@ -119,6 +144,12 @@ Notes:
   without taking over general snap refresh policy.
 - `base_workstation_update_package_lists_days` is set to `0` in the shared
   baseline because the dedicated `apt-refresh.timer` handles that path instead.
+- APT lock contention between these timers and the converge is handled outside
+  this table: shell helpers use `apt_get_with_lock_retry`
+  (`scripts/lib/apt_lock.sh`), while `ansible.builtin.apt` tasks rely on the
+  `lock_timeout` set via `module_defaults` in `playbooks/workstation.yml`.
+  That value is not a role variable, so changing a timer's spread here does not
+  change it. See `docs/apt-maintenance.md` for the bounds on raising it.
 
 ## Local User Variables
 

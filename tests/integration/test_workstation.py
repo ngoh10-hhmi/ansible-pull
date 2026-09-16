@@ -155,6 +155,7 @@ def restore_default_pull_state(workspace: Path) -> None:
             "base_apt_refresh_enabled": True,
             "base_managed_package_updates_enabled": True,
             "base_browser_package_updates_enabled": True,
+            "base_inotify_tuning_enabled": True,
         },
     )
 
@@ -180,7 +181,13 @@ def test_apt_refresh_timer_is_installed() -> None:
 
     assert timer.exists
     assert timer.contains("OnCalendar=hourly")
-    assert timer.contains("RandomizedDelaySec=0")
+    # Pins the shipped default, matching how the other timers are asserted here.
+    # The invariant that actually matters is the separate assertion below: this
+    # value must never go back to 0. A refresh pinned to exactly :00 shares a
+    # slot with the ansible-pull timer's own :00 tick, and a slow one fails the
+    # converge by holding /var/lib/apt/lists/lock across it.
+    assert timer.contains("RandomizedDelaySec=10m")
+    assert not timer.contains("RandomizedDelaySec=0")
     assert service.exists
     assert service.contains("ExecStart=/usr/local/sbin/apt-refresh")
     assert service.contains("TimeoutStartSec=10m")
@@ -200,6 +207,50 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.contains("Unattended-Upgrade::Package-Blacklist")
     assert unattended.contains('"nvidia-";')
     assert unattended.contains('"libnvidia-";')
+
+
+def test_inotify_instance_limit_is_raised() -> None:
+    # Mirrors base_inotify_max_user_instances in inventory/group_vars/all.yml --
+    # keep both in sync. The role must both persist the setting (drop-in, so it
+    # survives a reboot) and apply it to the running kernel (so a converge
+    # repairs a drifted host without waiting for one).
+    expected = 256
+    drop_in = host.file("/etc/sysctl.d/60-ansible-inotify.conf")
+
+    assert drop_in.exists
+    assert drop_in.user == "root"
+    assert drop_in.group == "root"
+    assert oct(drop_in.mode) == "0o644"
+    assert drop_in.contains(f"fs.inotify.max_user_instances = {expected}")
+
+    running = host.run("sysctl -n fs.inotify.max_user_instances")
+    assert running.rc == 0
+    assert int(running.stdout.strip()) == expected
+
+    # max_user_watches is a separate limit the role deliberately does not touch.
+    assert not drop_in.contains("max_user_watches")
+
+
+def test_inotify_tuning_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-inotify-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_inotify_tuning_enabled": False},
+        )
+
+        assert not host.file("/etc/sysctl.d/60-ansible-inotify.conf").exists
+
+        # Disabling stops the setting from being reapplied at boot but must not
+        # lower the running kernel value: processes may already hold instances
+        # above a lower ceiling.
+        running = host.run("sysctl -n fs.inotify.max_user_instances")
+        assert int(running.stdout.strip()) == 256
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
 
 
 def test_copy_fail_kmod_mitigation_is_applied() -> None:
@@ -327,6 +378,31 @@ def test_managed_package_updates_timer_is_installed() -> None:
     assert host.run("systemctl is-enabled managed-package-updates.timer").stdout.strip() == "enabled"
 
 
+def test_apt_helpers_have_their_lock_retry_library() -> None:
+    """The apt helpers source apt_lock.sh at startup, so it must be on disk.
+
+    Without it they exit 1 immediately. With it, a maintenance timer that loses
+    the /var/lib/apt/lists/lock race with the hourly apt-refresh waits instead
+    of failing with exit 100 (observed 2026-08-05).
+    """
+    library = host.file("/usr/local/lib/ansible-pull/apt_lock.sh")
+
+    assert library.exists
+    assert library.user == "root"
+    assert library.mode == 0o644
+    assert library.contains("apt_get_with_lock_retry")
+
+    for helper in (
+        "/usr/local/sbin/apt-refresh",
+        "/usr/local/sbin/upgrade-installed-apt-packages",
+    ):
+        installed = host.file(helper)
+        assert installed.exists
+        assert installed.contains("apt_get_with_lock_retry")
+        # The library must actually resolve from the installed location.
+        assert host.run(f"bash -n {helper}").rc == 0
+
+
 def test_browser_package_updates_timer_is_installed() -> None:
     timer = host.file("/etc/systemd/system/browser-package-updates.timer")
     service = host.file("/etc/systemd/system/browser-package-updates.service")
@@ -340,7 +416,7 @@ def test_browser_package_updates_timer_is_installed() -> None:
     assert service.contains(
         "ExecStart=/usr/local/sbin/update-installed-browsers --apt-list-file /etc/ansible/browser-package-updates.list --snap-list-file /etc/ansible/browser-snap-updates.list"
     )
-    assert service.contains("TimeoutStartSec=10m")
+    assert service.contains("TimeoutStartSec=30m")
     assert package_list.exists
     assert package_list.contains("^google-chrome-stable$")
     assert package_list.contains("^firefox$")

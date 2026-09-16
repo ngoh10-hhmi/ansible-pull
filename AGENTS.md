@@ -17,6 +17,7 @@ This repo manages Ubuntu workstations with `ansible-pull`.
 - `scripts/switch-pull-branch.sh`: updates branch/repo settings on an enrolled machine
 - `scripts/lib/envfile.sh`: reads/writes `/etc/ansible/pull.env` and validates the `bootstrap-vars.yml` schema
 - `scripts/lib/git_sync.sh`: checkout/clone helper; verifies HEAD matches the requested ref after every reset
+- `scripts/lib/apt_lock.sh`: retries `apt-get` while it is blocked on an APT lock the `DPkg::Lock::Timeout` option does not cover
 - `scripts/doctor.sh`: fast local and managed-host sanity check (invoked by `make doctor` and on workstations)
 - `scripts/apt-refresh.sh` / `scripts/upgrade-installed-apt-packages.sh` / `scripts/update-installed-browsers.sh`: helpers behind the hourly/daily maintenance timers
 - `docs/slack-webhook-setup.md`: operator guide for optional Slack notifications
@@ -122,14 +123,17 @@ Bootstrap flow:
 8. If already joined, it skips Phase 1 and the credential prompt, writes the final bootstrap vars directly (with `base_ad_enroll: true`), and runs a single converge.
 9. It enables the timer, does a final package upgrade, and prints the reboot warning (skipped if already joined).
 
-Bootstrap-only sudo-user choices are applied once, during the AD enrollment
-converge: the sudo keys appear in the AD-phase `/etc/ansible/bootstrap-vars.yml`
-but are deliberately omitted from the final stable state, so scheduled converges
-do not keep re-asserting the bootstrap-time list. Adding a user to the local
-sudo group is a persistent OS-level change, so the membership remains after
-bootstrap. During that one converge every requested name is passed to
-`gpasswd -a` regardless of whether NSS could resolve it — an unresolved name
-produces a warning and a tolerated `gpasswd: user 'X' does not exist`.
+Bootstrap-time sudo-group membership is handled entirely by the bootstrap
+script (`add_bootstrap_sudo_users`), not the role, and runs once after the AD
+join + SSSD are up (the first point a domain account can be confirmed to
+exist). Each requested name is validated with `getent passwd` (retried for
+SSSD cache warmup) and added with `gpasswd -a`; a name that does not resolve in
+AD is reported and the whole list is reprompted interactively (it does not
+abort the converge), while a `gpasswd` failure on a name that *did* resolve is
+fatal. The membership is a persistent OS-level change, so it remains after
+bootstrap, and it is never written into `/etc/ansible/bootstrap-vars.yml`, so
+scheduled converges do not re-assert it. The old role-side
+`base_sudo_users` / NSS-tolerance path is gone — do not reintroduce it.
 
 Bootstrap now treats timer enablement as required. If `ansible-pull.timer`
 cannot be enabled, bootstrap should fail loudly rather than silently
@@ -285,9 +289,56 @@ resets to that exact SHA on every run, so it never drifts forward.
   snap does not block the others. Failures are aggregated and printed; the
   unit returns non-zero if any snap failed so systemd marks it failed.
 - The APT helpers (`apt-refresh.sh` and `upgrade-installed-apt-packages.sh`)
-  pass `DPkg::Lock::Timeout=600` so they wait up to 10 minutes for the dpkg
-  lock instead of failing immediately when another timer-driven or
-  ansible-pull APT operation is mid-flight.
+  pass `DPkg::Lock::Timeout=600` **and** route every `apt-get` invocation
+  through `apt_get_with_lock_retry` in `scripts/lib/apt_lock.sh`. Both are
+  needed, because `DPkg::Lock::Timeout` only covers the dpkg
+  frontend/administration locks taken by `apt-get install`. The
+  `/var/lib/apt/lists/lock` that `apt-get update` takes, and the
+  `/var/cache/apt/archives/lock`, ignore it and fail instantly with
+  `E: Could not get lock ...` and exit 100. That is a live collision, not a
+  theoretical one: `apt-refresh.timer` is `hourly` with up to 10 minutes of
+  jitter, while `managed-package-updates.timer` (03:00) and
+  `browser-package-updates.timer` (04:00) carry 15 minutes of jitter, so their
+  windows overlap and one can start inside the refresh run. The refresh had no
+  jitter at all until 2026-09-11 and fired exactly on the hour, which is how the
+  collision below was reached. Observed 2026-08-05 on
+  `ngoh10-ws2`: `managed-package-updates` started at 03:00:04, lost the lists
+  lock to `apt-refresh`, and exited 100 after 0.79s having upgraded nothing.
+  The retry wrapper waits `APT_LOCK_RETRY_TIMEOUT_SEC` (default 600) in
+  `APT_LOCK_RETRY_INTERVAL_SEC` (default 15) steps, and retries **only** on the
+  lock-contention signature so real apt failures stay fast and loud. Do not add
+  a bare `apt-get` call to either helper — `tests/test_apt_lock.py` fails the
+  build if you do. `update-installed-browsers.sh` inherits the fix for its APT
+  half because it shells out to `/usr/local/sbin/upgrade-installed-apt-packages`;
+  its snap half does not touch APT locks.
+- That wrapper covers the **shell** helpers only. `ansible.builtin.apt` tasks
+  have their own mechanism: the module waits `lock_timeout` seconds for an APT
+  lock and then fails the task, defaulting to a too-short 60s. The play sets
+  `lock_timeout: 360` for every apt task via `module_defaults` in
+  `playbooks/workstation.yml` — play level, so role tasks and role handlers are
+  covered too. Keep it there rather than per task, and keep it bounded: the
+  module busy-spins while waiting, the `Install base Ubuntu packages`
+  block/`rescue` pair can pay it twice, and 2 x the value has to fit inside
+  `ansible-pull.service`'s `TimeoutStartSec=30m` and the 1800s
+  `ANSIBLE_PULL_LOCK_WAIT_SECONDS` budget that `bootstrap-ubuntu.sh` and
+  `switch-pull-branch.sh` block for. Added 2026-09-11 after a ~5 minute
+  mirror-stalled refresh held the lists lock across a converge and failed it
+  with `Failed to lock apt for exclusive operation`.
+- The role raises `fs.inotify.max_user_instances` to
+  `base_inotify_max_user_instances` (256) through
+  `/etc/sysctl.d/60-ansible-inotify.conf` **and** a `sysctl -w` on the running
+  kernel, guarded by a drift check so the converge stays a no-op. Both halves are
+  required: the drop-in survives reboot, the live write repairs a drifted host
+  without waiting for one. The kernel default of 128 is exhausted by a normal
+  desktop session, and at the ceiling `inotify_init1()` fails with `EMFILE` —
+  reported as the misleading "Too many open files" from unrelated tools (see
+  `docs/troubleshooting.md`). The value stays modest because it bounds worst-case
+  queued-event memory and the fleet includes 16 GB and 32 GB machines; raise it
+  per host via `host_vars` rather than globally. Do not extend this block to
+  `fs.inotify.max_user_watches` without measuring — it is a separate limit with a
+  much larger per-unit cost, and real usage sits far below its 65536 default.
+  When `base_inotify_tuning_enabled` is false the role removes the drop-in but
+  deliberately does not lower the running value.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.

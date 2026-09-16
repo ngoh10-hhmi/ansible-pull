@@ -115,6 +115,9 @@ ${context}
 
   payload="$(build_payload "${host}" "${text}")"
 
+  # Pass the webhook URL to curl via a config file on a process-substitution fd
+  # rather than argv, so the secret is not exposed in /proc/<pid>/cmdline to
+  # other local users. The payload (--data) is not sensitive.
   if curl \
     --silent \
     --show-error \
@@ -126,7 +129,7 @@ ${context}
     -X POST \
     -H 'Content-type: application/json' \
     --data "${payload}" \
-    "${SLACK_WEBHOOK_URL}"; then
+    --config <(printf 'url = "%s"\n' "${SLACK_WEBHOOK_URL}"); then
     echo "Sent Slack failure alert for ${unit}."
   else
     echo "Warning: failed to send Slack alert for ${unit}." >&2
