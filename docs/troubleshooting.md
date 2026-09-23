@@ -158,6 +158,49 @@ Note that a value that keeps climbing back to the ceiling usually means a
 process is leaking inotify instances. Raising the limit buys time; the process
 in the per-UID listing above is the thing to fix.
 
+## "Online Accounts: Account action required" after login, or clock not synchronized
+
+GNOME automatically creates a temporary Kerberos ("Enterprise Login") Online
+Account from your login ticket. When the local clock is behind the domain
+controllers, GNOME's Kerberos provider rejects that ticket and shows "Account
+action required ... failed to sign into <user>@hhmi.org" on every login.
+Observed on `scicompai-ws2` (2026-09-23): the clock had never synced and was 38s
+behind; syncing it to a DC made the popup stop. Logging out and back in doesn't
+help, because the clock stays wrong.
+
+Check whether the clock is synced and which source chrony picked:
+
+```bash
+timedatectl | grep synchronized          # want: yes
+chronyc tracking | grep -E 'Reference|Leap'
+chronyc -n sources                       # '^*' marks the selected source
+```
+
+A quick way to measure the skew without NTP tools: run `kinit`, then compare the
+`Valid starting` time in `klist` with `date`. On a correct machine they match to
+the second.
+
+Stock Ubuntu 26.04 configures chrony with Ubuntu's NTS pools only, and NTS
+doesn't complete from the HHMI network. Those sources show `^?` with reach `0`,
+and chrony's default `authselectmode mix` then refuses any unauthenticated
+source as well, so the machine never syncs. The role fixes this with
+`/etc/chrony/sources.d/hhmi-ad.sources` (the domain controllers from
+`base_ntp_servers`) and `/etc/chrony/conf.d/hhmi-ad.conf`
+(`authselectmode ignore`). If those files are missing, the host hasn't
+converged since the fix landed: run `sudo /usr/local/sbin/run-ansible-pull`,
+or apply the fix by hand:
+
+```bash
+printf 'server %s iburst prefer\n' jfdc1.hhmi.org hqdc1.hhmi.org hqdc2.hhmi.org \
+  | sudo tee /etc/chrony/sources.d/hhmi-ad.sources
+echo 'authselectmode ignore' | sudo tee /etc/chrony/conf.d/hhmi-ad.conf
+sudo systemctl restart chrony
+```
+
+After the restart, chrony corrects the clock in a single step once it gets its
+first samples, usually within about 20 seconds. A clock more than 5 minutes off
+breaks AD logins entirely, not just this popup.
+
 ## SSSD fails to start on Ubuntu 26.04+
 
 Ubuntu 26.04 runs SSSD as the unprivileged `sssd` user, and later releases keep

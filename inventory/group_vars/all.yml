@@ -93,6 +93,15 @@ base_slack_webhook_share_file: 'test_henry\slack_webhook.txt'
 base_inotify_tuning_enabled: true
 base_inotify_max_user_instances: 256
 
+# AD domain controllers as chrony time sources. Kerberos needs the clock to
+# agree with the KDC, and stock 26.04's NTS-only pools cannot sync from the
+# HHMI network. All three answer NTP (jfdc1 stratum 2, hqdc1/hqdc2 stratum 3,
+# verified 2026-09-23). Off-network laptops fall back to the Ubuntu pools.
+base_ntp_servers:
+  - jfdc1.hhmi.org
+  - hqdc1.hhmi.org
+  - hqdc2.hhmi.org
+
 base_workstation_enable_unattended_upgrades: true
 # The day-based APT periodic refresh stays off because systemd handles it
 # hourly.

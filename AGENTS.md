@@ -339,6 +339,23 @@ resets to that exact SHA on every run, so it never drifts forward.
   much larger per-unit cost, and real usage sits far below its 65536 default.
   When `base_inotify_tuning_enabled` is false the role removes the drop-in but
   deliberately does not lower the running value.
+- Time sync is Kerberos-critical. `roles/base/tasks/time_sync.yml` installs
+  chrony and writes `/etc/chrony/sources.d/hhmi-ad.sources` (`server <dc>
+  iburst prefer` for each of `base_ntp_servers`, the AD domain controllers) plus
+  `/etc/chrony/conf.d/hhmi-ad.conf` with `authselectmode ignore`, then restarts
+  chrony. Both halves are required: stock 26.04 ships only Ubuntu's NTS pools,
+  NTS key exchange does not complete from the HHMI network, and chrony's default
+  `authselectmode mix` will not select an unauthenticated source unless an
+  authenticated one is also selectable, so a fresh 26.04 build with DC sources
+  alone still never syncs. Observed 2026-09-23 on `scicompai-ws2`: never
+  synced, 38s behind the DCs, and GNOME Online Accounts raised "Account action
+  required ... failed to sign into" on every login until the clock was synced
+  to a DC. Keep the Ubuntu pools as
+  the off-network fallback for laptops. It is imported before `ad_join.yml` and
+  deliberately not gated on `base_ad_enroll`, because bootstrap's pre-join
+  converge has to fix the clock before the realm join. Integration tests check
+  configuration only (`chronyd -p`); CI runners cannot reach the DCs, so never
+  assert that the clock is synchronized.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.
