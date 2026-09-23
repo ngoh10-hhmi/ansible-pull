@@ -69,7 +69,11 @@ The rough flow is:
     here — grant them sudo by hand afterward.
 12. enable the timer and run a final package upgrade
 
-If the host is already joined to Active Directory (e.g. during a re-run of the bootstrap script), the script detects this and performs a single-phase converge directly with `base_ad_enroll: true`. This avoids prompting the operator for domain credentials, skips the first baseline run, and bypasses the reboot warning.
+If the host is already joined to Active Directory (e.g. during a re-run of the bootstrap script), the script detects this and performs a single-phase converge directly with `base_ad_enroll: true`. This avoids prompting the operator for domain credentials, skips the first baseline run, and bypasses the reboot warning. The exception is a rename: if the hostname entered
+differs from the computer name in `/etc/krb5.keytab`, bootstrap offers to run
+`realm leave hhmi.org` and then does the full two-phase enrollment under the
+new name. If you decline, it aborts before converging (see "Renaming an
+already-joined workstation" in `docs/troubleshooting.md`).
 
 The key idea is that bootstrap writes machine-local values into files under
 `/etc/ansible/`. Those files persist on the workstation and are reused on later
