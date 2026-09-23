@@ -71,6 +71,32 @@ a single converge with `base_ad_enroll: true`. Use this when you need to
 finish or repeat the post-AD steps (timer enablement, final upgrade) after a
 partial bootstrap.
 
+### Renaming an already-joined workstation
+
+On an already-joined machine, bootstrap compares the hostname you enter with
+the computer name the machine is joined to AD as (the `NAME$@HHMI.ORG`
+principal in `/etc/krb5.keytab`, compared case-insensitively). Without this
+check, a converge would rename the machine locally but skip the realm join,
+leaving the AD computer object and keytab under the old name.
+
+If the names differ, bootstrap explains the mismatch and asks whether to leave
+the realm now:
+
+- **y**: runs `realm leave hhmi.org`, then goes through the normal two-phase
+  enrollment. It prompts for AD credentials, joins as the new name, and prints
+  the reboot warning. AD logins don't work between the leave and a successful
+  re-join. If the re-join fails, `bootstrap-vars.yml` is left with
+  `base_ad_enroll: false`; re-run bootstrap to finish.
+- **n**: aborts before converging, so nothing is renamed. Either run
+  `sudo realm leave hhmi.org` yourself and re-run bootstrap, or re-run and
+  enter the current joined name to keep it.
+
+`realm leave` only removes the local join. The old computer object remains in
+AD and has to be deleted there separately.
+
+If the keytab can't be read, bootstrap warns that it is skipping the check and
+continues as a normal already-joined re-run.
+
 A re-run also preserves operator-set values already in `/etc/ansible/pull.env`
 (the Slack webhook, and the selected branch/playbook) unless you override them
 with the matching flag — so it will not wipe a configured webhook. Pass

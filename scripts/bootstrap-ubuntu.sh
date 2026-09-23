@@ -673,6 +673,73 @@ is_already_joined_to_ad() {
   return 1
 }
 
+# Print the short computer name this machine is joined to AD as, lowercased, or
+# nothing if it cannot be determined. realm/adcli write the machine account
+# principal (NAME$@HHMI.ORG) into /etc/krb5.keytab; that is the only local record
+# of the AD-side name, since `hostname` and bootstrap-vars.yml both follow
+# whatever a previous converge set. The klist output is captured before parsing
+# so an early-exiting awk cannot SIGPIPE klist under pipefail.
+joined_ad_computer_name() {
+  local keytab_listing principal
+
+  command -v klist >/dev/null 2>&1 || return 0
+  keytab_listing="$(klist -k /etc/krb5.keytab 2>/dev/null)" || return 0
+  principal="$(awk '$2 ~ /\$@/ { print $2; exit }' <<<"${keytab_listing}")"
+  [[ -n "${principal}" ]] || return 0
+
+  principal="${principal%%\$@*}"
+  printf '%s\n' "${principal,,}"
+}
+
+# Called when the machine is already joined to AD. A converge would rename the
+# host locally to SHORT_HOSTNAME but skip the realm join, leaving the AD
+# computer object and keytab under the old name. Detect that and either leave
+# the realm (so main() re-enrolls under the new name) or stop with instructions.
+# Returns 0 if the realm was left, 1 if no rename is pending.
+leave_realm_if_hostname_changed() {
+  local joined_name reply
+
+  joined_name="$(joined_ad_computer_name)"
+  if [[ -z "${joined_name}" ]]; then
+    echo "Warning: could not determine the joined AD computer name from /etc/krb5.keytab; skipping the hostname-change check." >&2
+    return 1
+  fi
+
+  if [[ "${joined_name}" == "${SHORT_HOSTNAME,,}" ]]; then
+    return 1
+  fi
+
+  {
+    echo ""
+    echo "This machine is joined to AD as '${joined_name}', but you entered hostname '${SHORT_HOSTNAME}'."
+    echo "Continuing without re-enrolling would rename the machine locally while its AD"
+    echo "computer object and keytab stay '${joined_name}'."
+    echo ""
+    echo "Leaving the realm now removes the local join (keytab and sssd.conf); bootstrap"
+    echo "then prompts for AD credentials and re-joins as '${SHORT_HOSTNAME}'. AD logins will"
+    echo "not work on this machine until that re-join succeeds. The old '${joined_name}'"
+    echo "computer object is NOT deleted from AD and must be removed there separately."
+  } >&2
+
+  while true; do
+    prompt_line "the realm-leave confirmation" reply \
+      "Leave hhmi.org now and re-enroll as '${SHORT_HOSTNAME}'? [y/n]: "
+    case "${reply,,}" in
+      y | yes) break ;;
+      n | no)
+        die "Aborting before the converge; the machine has not been renamed or left the realm. To rename this machine, run 'sudo realm leave hhmi.org' and re-run bootstrap with the new hostname, or re-run bootstrap and enter '${joined_name}' to keep the current name."
+        ;;
+      *) echo "Error: please answer 'y' or 'n'." >&2 ;;
+    esac
+  done
+
+  echo "Leaving hhmi.org (joined as '${joined_name}')"
+  if ! realm leave hhmi.org; then
+    die "Error: 'realm leave hhmi.org' failed; the machine is still joined as '${joined_name}'. Inspect the output above."
+  fi
+  return 0
+}
+
 # Prompt for machine identity metadata used by the Ansible role. The whole set
 # of prompts is collected, summarized, and confirmed; answering "no" at the
 # confirmation restarts the prompts so a mistyped-but-valid value can be fixed.
@@ -1036,6 +1103,11 @@ main() {
   local was_already_joined="false"
   if is_already_joined_to_ad; then
     was_already_joined="true"
+    # A hostname that differs from the joined computer name means a rename;
+    # after leaving the realm, fall through to the normal two-phase enrollment.
+    if leave_realm_if_hostname_changed; then
+      was_already_joined="false"
+    fi
   fi
 
   if [[ "${was_already_joined}" == "true" ]]; then

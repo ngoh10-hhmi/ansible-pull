@@ -564,6 +564,10 @@ def test_main_skips_enrollment_if_already_joined() -> None:
             is_already_joined_to_ad() {
               return 0
             }
+            # Hostname matches the joined computer name: no rename pending
+            leave_realm_if_hostname_changed() {
+              return 1
+            }
 
             # Mock execution steps
             write_bootstrap_vars_final_state() {
@@ -680,6 +684,210 @@ def test_main_performs_full_two_phase_enrollment_if_not_joined() -> None:
     assert "RUN_FINAL_UPGRADE" in result.stdout
 
     # Verify that reboot warning is printed
+    assert "PRINT_REBOOT_WARNING" in result.stdout
+
+
+KEYTAB_LISTING = """\
+Keytab name: FILE:/etc/krb5.keytab
+KVNO Principal
+---- --------------------------------------------------------------------------
+   2 OLD-HOST$@HHMI.ORG
+   2 OLD-HOST$@HHMI.ORG
+   2 host/OLD-HOST@HHMI.ORG
+   2 host/old-host.hhmi.org@HHMI.ORG
+   2 RestrictedKrbHost/OLD-HOST@HHMI.ORG
+"""
+
+
+def _keytab_harness(klist_body: str, body: str) -> str:
+    return textwrap.dedent(
+        """\
+        source scripts/bootstrap-ubuntu.sh
+        klist() {{
+        {klist_body}
+        }}
+        {body}
+        """
+    ).format(klist_body=klist_body, body=body)
+
+
+def test_joined_ad_computer_name_parses_machine_principal() -> None:
+    result = run_bash(
+        _keytab_harness(
+            f"cat <<'LISTING'\n{KEYTAB_LISTING}LISTING",
+            'echo "NAME=[$(joined_ad_computer_name)]"',
+        )
+    )
+    assert "NAME=[old-host]" in result.stdout
+
+
+def test_joined_ad_computer_name_is_empty_without_machine_principal() -> None:
+    result = run_bash(
+        _keytab_harness(
+            "echo '   2 host/OLD-HOST@HHMI.ORG'",
+            'echo "NAME=[$(joined_ad_computer_name)]"',
+        )
+    )
+    assert "NAME=[]" in result.stdout
+
+
+def test_joined_ad_computer_name_is_empty_when_klist_fails() -> None:
+    result = run_bash(
+        _keytab_harness(
+            "echo 'klist: Permission denied' >&2; return 1",
+            'echo "NAME=[$(joined_ad_computer_name)]"',
+        )
+    )
+    assert "NAME=[]" in result.stdout
+
+
+def _leave_realm_harness(short_hostname: str, *answers: str) -> str:
+    printf_args = " ".join(shlex.quote(answer) for answer in answers)
+    return _keytab_harness(
+        f"cat <<'LISTING'\n{KEYTAB_LISTING}LISTING",
+        textwrap.dedent(
+            f"""\
+            realm() {{ echo "REALM_CALLED: $*"; }}
+            SHORT_HOSTNAME={shlex.quote(short_hostname)}
+            if leave_realm_if_hostname_changed < <(printf '%s\\n' {printf_args})
+            then
+              echo "RESULT=left"
+            else
+              echo "RESULT=kept"
+            fi
+            """
+        ),
+    )
+
+
+def test_leave_realm_is_noop_when_hostname_matches_case_insensitively() -> None:
+    result = run_bash(_leave_realm_harness("OLD-Host"))
+    assert "RESULT=kept" in result.stdout
+    assert "REALM_CALLED" not in result.stdout
+
+
+def test_leave_realm_is_skipped_with_warning_when_name_unknown() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+            joined_ad_computer_name() { :; }
+            realm() { echo "REALM_CALLED: $*"; }
+            SHORT_HOSTNAME=new-host
+            if leave_realm_if_hostname_changed </dev/null; then
+              echo "RESULT=left"
+            else
+              echo "RESULT=kept"
+            fi
+            """
+        )
+    )
+    assert "RESULT=kept" in result.stdout
+    assert "REALM_CALLED" not in result.stdout
+    assert "skipping the hostname-change check" in result.stderr
+
+
+def test_leave_realm_on_rename_when_confirmed() -> None:
+    result = run_bash(_leave_realm_harness("new-host", "maybe", "y"))
+    assert "joined to AD as 'old-host'" in result.stderr
+    assert "please answer 'y' or 'n'" in result.stderr
+    assert "REALM_CALLED: leave hhmi.org" in result.stdout
+    assert "RESULT=left" in result.stdout
+
+
+def test_leave_realm_aborts_on_rename_when_declined() -> None:
+    result = run_bash(_leave_realm_harness("new-host", "n"), check=False)
+    assert result.returncode != 0
+    assert "REALM_CALLED" not in result.stdout
+    assert "sudo realm leave hhmi.org" in result.stderr
+    assert "RESULT=" not in result.stdout
+
+
+def test_leave_realm_aborts_on_eof() -> None:
+    result = run_bash(
+        _keytab_harness(
+            f"cat <<'LISTING'\n{KEYTAB_LISTING}LISTING",
+            textwrap.dedent(
+                """\
+                realm() { echo "REALM_CALLED: $*"; }
+                SHORT_HOSTNAME=new-host
+                leave_realm_if_hostname_changed </dev/null
+                echo "RESULT=returned"
+                """
+            ),
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "reached end of input" in result.stderr
+    assert "REALM_CALLED" not in result.stdout
+
+
+def test_leave_realm_dies_when_realm_leave_fails() -> None:
+    result = run_bash(
+        _keytab_harness(
+            f"cat <<'LISTING'\n{KEYTAB_LISTING}LISTING",
+            textwrap.dedent(
+                """\
+                realm() { return 1; }
+                SHORT_HOSTNAME=new-host
+                leave_realm_if_hostname_changed <<<"y"
+                echo "RESULT=returned"
+                """
+            ),
+        ),
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "still joined as 'old-host'" in result.stderr
+    assert "RESULT=returned" not in result.stdout
+
+
+def test_main_re_enrolls_when_joined_hostname_changed() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/bootstrap-ubuntu.sh
+
+            audit_log_invocation() { :; }
+            preload_existing_pull_env() { :; }
+            parse_args() { :; }
+            validate_prerequisites() { :; }
+            install_bootstrap_dependencies() { :; }
+            prepare_runtime_directories() { :; }
+            configure_git_credentials() { :; }
+            acquire_pull_sync_lock() { :; }
+            release_pull_sync_lock() { :; }
+            sync_repository_checkout() { :; }
+            source_checkout_libs() { :; }
+            install_runtime_support() { :; }
+            write_pull_environment() { :; }
+            prompt_slack_webhook() { :; }
+            prompt_machine_identity() { :; }
+
+            is_already_joined_to_ad() { return 0; }
+            # Rename detected and the realm was left
+            leave_realm_if_hostname_changed() { echo "LEFT_REALM"; return 0; }
+
+            write_bootstrap_vars_final_state() { echo "WRITE_FINAL_STATE"; }
+            write_bootstrap_vars_initial_state() { echo "WRITE_INITIAL_STATE"; }
+            run_initial_configuration() { echo "RUN_CONVERGE"; }
+            join_active_directory() { echo "JOIN_ACTIVE_DIRECTORY"; }
+            mark_final_state_written() { :; }
+            enable_pull_timer() { :; }
+            run_final_upgrade() { :; }
+            print_ad_reboot_warning() { echo "PRINT_REBOOT_WARNING"; }
+
+            main
+            """
+        )
+    )
+    assert "LEFT_REALM" in result.stdout
+    assert "already joined" not in result.stdout
+    # Falls through to the full two-phase enrollment, including the reboot warning
+    assert "WRITE_INITIAL_STATE" in result.stdout
+    assert "JOIN_ACTIVE_DIRECTORY" in result.stdout
+    assert "WRITE_FINAL_STATE" in result.stdout
     assert "PRINT_REBOOT_WARNING" in result.stdout
 
 
