@@ -1,0 +1,69 @@
+---
+# Keep the clock in agreement with the AD domain controllers. Kerberos rejects
+# skew over 5 minutes outright, and well inside that GNOME Online Accounts'
+# Kerberos provider already rejects the login ticket and raises "Account action
+# required ... failed to sign into" on every login.
+#
+# Stock Ubuntu 26.04 ships chrony with Ubuntu's NTS pools only
+# (/etc/chrony/sources.d/ubuntu-ntp-pools.sources, `nts prefer`). NTS key
+# exchange does not complete from the HHMI network, and chrony's default
+# `authselectmode mix` refuses to select an unauthenticated source unless an
+# authenticated one is also selectable. So a fresh 26.04 build never syncs at
+# all: observed on scicompai-ws2 on 2026-09-23, 38s behind the DCs, drift file
+# never calibrated, and the Online Accounts popup on every login.
+#
+# The DCs are added as preferred sources and `authselectmode ignore` lets them
+# be selected on their own. The Ubuntu pools stay configured as the fallback for
+# laptops off the HHMI network, where the DCs are unreachable.
+#
+# Not gated on base_ad_enroll: phase 1 of bootstrap converges before the realm
+# join, and the join itself needs a clock the KDC accepts.
+- name: Point chrony at the AD domain controllers
+  when:
+    - base_time_sync_enabled
+    - base_ntp_servers | length > 0
+  block:
+    # 26.04 already defaults to chrony. On 22.04/24.04 this replaces
+    # systemd-timesyncd, which conflicts with chrony at the package level.
+    - name: Install chrony
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+
+    - name: Install AD domain controller time sources
+      ansible.builtin.copy:
+        dest: /etc/chrony/sources.d/hhmi-ad.sources
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ansible-pull. Source of truth: base_ntp_servers in
+          # inventory/group_vars/all.yml
+          {% for server in base_ntp_servers %}
+          server {{ server }} iburst prefer
+          {% endfor %}
+      notify: Restart chrony
+
+    - name: Allow chrony to select the unauthenticated DC sources
+      ansible.builtin.copy:
+        dest: /etc/chrony/conf.d/hhmi-ad.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Managed by ansible-pull. The Ubuntu NTS pools are unreachable from
+          # the HHMI network; under the default `mix` mode chrony would then
+          # refuse the (unauthenticated) DC sources too and never sync.
+          authselectmode ignore
+      notify: Restart chrony
+
+# Only notifies when the files existed, which implies chrony is installed.
+- name: Remove AD time sources when time sync management is disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/chrony/sources.d/hhmi-ad.sources
+    - /etc/chrony/conf.d/hhmi-ad.conf
+  when: not base_time_sync_enabled
+  notify: Restart chrony

@@ -179,6 +179,8 @@ Notes:
 | `target_hostname` | Short hostname used to set the machine FQDN | bootstrap-persisted value | `roles/base/tasks/ad_join.yml` |
 | `machine_type` | `desktop` or `laptop`; affects AD/SSSD behavior | bootstrap-persisted value | `roles/base/tasks/ad_join.yml` and `roles/base/templates/sssd.conf.j2` |
 | `ad_sudo_group` | Optional AD group granted sudo access | host or shared inventory if needed | sudoers file in `roles/base/tasks/ad_join.yml` |
+| `base_time_sync_enabled` | Whether the role manages chrony's AD time sources | defaults to `true` | `roles/base/tasks/time_sync.yml` |
+| `base_ntp_servers` | Time servers added as `server <name> iburst prefer` (the AD domain controllers) | `inventory/group_vars/all.yml` (role default is empty) | `/etc/chrony/sources.d/hhmi-ad.sources` |
 
 Notes:
 
@@ -188,6 +190,13 @@ Notes:
   server fallbacks in `sssd.conf.j2`.
 - `ad_sudo_group` is optional. If it is not set, only the built-in
   `scicompsys` group entry is written by the current task.
+- `base_ntp_servers` is not gated on `base_ad_enroll`: the realm join needs a
+  clock the KDC accepts, so time sync is configured from bootstrap's first
+  (pre-join) converge. With the list non-empty the role also installs chrony,
+  which replaces `systemd-timesyncd` on 22.04/24.04, and writes
+  `/etc/chrony/conf.d/hhmi-ad.conf` with `authselectmode ignore`. Setting
+  `base_time_sync_enabled: false` removes both drop-ins but leaves chrony
+  installed.
 
 ## Informational Variables
 

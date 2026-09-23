@@ -161,6 +161,8 @@ That role is the baseline HHMI workstation configuration. It handles:
 - APT refresh, targeted package-update timers, and unattended-upgrades policy
 - kernel limits that a desktop session outgrows (currently the per-UID inotify
   instance ceiling)
+- clock sync: chrony pointed at the AD domain controllers so the clock agrees
+  with the KDC
 - optional local users and sudo-group access
 - Active Directory enrollment, SSSD configuration, and optional AD group sudoers
 
@@ -168,6 +170,8 @@ Although there is only one role today, the role is split internally:
 
 - `roles/base/tasks/main.yml`
   general workstation baseline and timer/runtime setup
+- `roles/base/tasks/time_sync.yml`
+  chrony time sources (AD domain controllers); runs before the AD join
 - `roles/base/tasks/ad_join.yml`
   HHMI domain enrollment and directory-backed access
 

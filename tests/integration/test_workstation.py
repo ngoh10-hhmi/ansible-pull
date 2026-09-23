@@ -156,6 +156,7 @@ def restore_default_pull_state(workspace: Path) -> None:
             "base_managed_package_updates_enabled": True,
             "base_browser_package_updates_enabled": True,
             "base_inotify_tuning_enabled": True,
+            "base_time_sync_enabled": True,
         },
     )
 
@@ -248,6 +249,55 @@ def test_inotify_tuning_can_be_disabled() -> None:
         # above a lower ceiling.
         running = host.run("sysctl -n fs.inotify.max_user_instances")
         assert int(running.stdout.strip()) == 256
+    finally:
+        restore_default_pull_state(workspace)
+        shutil.rmtree(workspace)
+
+
+def test_chrony_uses_ad_domain_controllers() -> None:
+    # Mirrors base_ntp_servers in inventory/group_vars/all.yml -- keep both in
+    # sync. CI cannot reach the DCs, so this checks configuration, not sync.
+    expected_servers = ["jfdc1.hhmi.org", "hqdc1.hhmi.org", "hqdc2.hhmi.org"]
+
+    assert host.package("chrony").is_installed
+    assert host.service("chrony").is_running
+
+    sources = host.file("/etc/chrony/sources.d/hhmi-ad.sources")
+    assert sources.exists
+    assert sources.user == "root"
+    assert oct(sources.mode) == "0o644"
+    for server in expected_servers:
+        assert sources.contains(f"^server {server} iburst prefer$")
+
+    conf = host.file("/etc/chrony/conf.d/hhmi-ad.conf")
+    assert conf.exists
+    assert conf.contains("^authselectmode ignore$")
+
+    # chronyd -p prints the effective config with conf.d expanded, which proves
+    # this release's chrony.conf includes the drop-in and accepts the directive.
+    parsed = host.run("chronyd -p")
+    assert parsed.rc == 0, parsed.stderr
+    assert "authselectmode ignore" in parsed.stdout
+
+
+def test_time_sync_management_can_be_disabled() -> None:
+    workspace = Path(tempfile.mkdtemp(prefix="ansible-pull-timesync-"))
+    try:
+        run_pull(
+            REPO_ROOT,
+            workspace / "checkout",
+            workspace / "logs",
+            extra_vars={"base_time_sync_enabled": False},
+        )
+
+        assert not host.file("/etc/chrony/sources.d/hhmi-ad.sources").exists
+        assert not host.file("/etc/chrony/conf.d/hhmi-ad.conf").exists
+        # Disabling removes only the drop-ins; chrony, installed by the default
+        # (enabled) converge that ran before this test, keeps running on the
+        # distro pools. A host that never ran the enabled path has no chrony and
+        # no drop-ins, so the removal task changes nothing and never notifies
+        # the restart handler.
+        assert host.service("chrony").is_running
     finally:
         restore_default_pull_state(workspace)
         shutil.rmtree(workspace)

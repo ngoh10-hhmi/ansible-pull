@@ -71,6 +71,12 @@
     state: absent
   when: (base_workstation_remove_packages | default([])) | length > 0
 
+# Clock sync against the AD domain controllers. Runs on every converge,
+# including bootstrap's pre-join phase, because the realm join needs a clock
+# the KDC accepts. See time_sync.yml for why stock 26.04 never syncs here.
+- name: Configure time sync against the AD domain controllers
+  ansible.builtin.import_tasks: time_sync.yml
+
 # Mitigate CVE-2026-31431 ("Copy Fail") by ensuring kmod carries the
 # Canonical-patched version. We compare the installed version against the
 # per-release minimum and only touch kmod when the host is behind — this

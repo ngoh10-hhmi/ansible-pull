@@ -11,3 +11,11 @@
 - name: Force APT cache update
   ansible.builtin.apt:
     update_cache: true
+
+# authselectmode is only read at startup, so this is a restart rather than a
+# `chronyc reload sources`. After a restart makestep (1s, first 3 updates) steps
+# a drifted clock straight to DC time instead of slewing it for hours.
+- name: Restart chrony
+  ansible.builtin.systemd_service:
+    name: chrony
+    state: restarted

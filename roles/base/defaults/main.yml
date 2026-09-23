@@ -136,6 +136,13 @@ base_unattended_upgrade_package_blacklist:
 base_inotify_tuning_enabled: true
 base_inotify_max_user_instances: 256
 
+# chrony time sources, added as `server <name> iburst prefer` alongside the
+# distro's own pools. Empty here so the role stays neutral outside HHMI; the
+# active list (the AD domain controllers) lives in inventory/group_vars/all.yml.
+# See roles/base/tasks/time_sync.yml for why stock 26.04 needs this to sync.
+base_time_sync_enabled: true
+base_ntp_servers: []
+
 # Minimum kmod version per Ubuntu release that carries the CVE-2026-31431
 # ("Copy Fail") mitigation. The fix lives in kmod's modprobe blacklist for
 # the affected algif_aead path, so the userspace package upgrade is what
