@@ -80,14 +80,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y git python3-apt
 
+      # Pass needed variables through `sudo env` explicitly rather than
+      # `sudo -E`: 26.04's sudo-rs ignores -E ("preserving the entire
+      # environment is not supported"), which silently dropped
+      # TEST_GIT_BRANCH so the tests cloned a nonexistent `main`.
       - name: Converge workstation playbook
         run: |
           ANSIBLE_PLAYBOOK_BIN="$(command -v ansible-playbook)"
-          sudo -E env "PATH=$PATH" "${ANSIBLE_PLAYBOOK_BIN}" \
+          sudo env "PATH=$PATH" "${ANSIBLE_PLAYBOOK_BIN}" \
             --inventory inventory/hosts.yml \
             playbooks/workstation.yml \
             --extra-vars "base_ansible_pull_repo_url=${GITHUB_WORKSPACE}" \
             --extra-vars "base_ansible_pull_branch=${TEST_GIT_BRANCH}"
 
       - name: Run integration tests
-        run: sudo -E env "PATH=$PATH" python -m pytest -q tests/integration
+        run: >-
+          sudo env "PATH=$PATH" "TEST_GIT_BRANCH=$TEST_GIT_BRANCH"
+          python -m pytest -q tests/integration

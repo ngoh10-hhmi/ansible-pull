@@ -356,6 +356,12 @@ resets to that exact SHA on every run, so it never drifts forward.
   converge has to fix the clock before the realm join. Integration tests check
   configuration only (`chronyd -p`); CI runners cannot reach the DCs, so never
   assert that the clock is synchronized.
+- Do not rely on `sudo -E` to carry environment variables. Ubuntu 26.04 ships
+  sudo-rs as `sudo`, which ignores `-E` ("preserving the entire environment is
+  not supported") and continues without the variables. Pass what a root command
+  needs explicitly: `sudo env "PATH=$PATH" "TEST_GIT_BRANCH=$TEST_GIT_BRANCH" ...`.
+  This silently broke the first `ubuntu-26.04` CI run: `TEST_GIT_BRANCH` never
+  reached pytest, so the tests cloned a `main` branch the PR checkout didn't have.
 - `ansible-pull.service` is timer-driven; do not redesign it as a directly enabled long-running service without intent.
 - The empty `base_workstation_base_packages` default in `roles/base/defaults/main.yml` is intentional. The active baseline lives in `inventory/group_vars/all.yml`.
 - `ansible-pull` currently checks in every 15 minutes. A dedicated `apt-refresh.timer` refreshes APT package lists hourly, `managed-package-updates.timer` upgrades installed packages from `base_workstation_base_packages` daily, `browser-package-updates.timer` upgrades installed browser APT packages from `base_browser_update_packages` and installed browser snaps from `base_browser_update_snaps` daily, and unattended security upgrades remain on a 30-day cadence.
