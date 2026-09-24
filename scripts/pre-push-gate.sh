@@ -9,7 +9,7 @@
 # Escape hatches:
 #   git push --no-verify           # skip the gate entirely
 #   SKIP_VM_TESTS=1 git push       # run unit tests only, skip the (slow) VMs
-#   MP_TARGET=22.04 git push       # run a single release instead of both
+#   MP_TARGET=26.04 git push       # run a single release instead of both
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

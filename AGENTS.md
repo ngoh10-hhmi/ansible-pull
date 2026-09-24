@@ -92,7 +92,7 @@ make integration
 CI currently runs:
 
 - pre-commit checks on every PR and on pushes to `main` and `testing`
-- integration coverage on Ubuntu 22.04 and 24.04
+- integration coverage on Ubuntu 24.04 and 26.04 (22.04 is no longer deployed)
 
 Common local workflow:
 

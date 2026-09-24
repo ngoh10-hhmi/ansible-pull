@@ -23,8 +23,8 @@
     - base_time_sync_enabled
     - base_ntp_servers | length > 0
   block:
-    # 26.04 already defaults to chrony. On 22.04/24.04 this replaces
-    # systemd-timesyncd, which conflicts with chrony at the package level.
+    # 26.04 already defaults to chrony. On 24.04 (and any remaining 22.04
+    # host) this replaces systemd-timesyncd, which conflicts with chrony.
     - name: Install chrony
       ansible.builtin.apt:
         name: chrony

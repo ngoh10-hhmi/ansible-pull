@@ -51,9 +51,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-22.04
-          - ubuntu-24.04
+        # The fleet is 24.04 and 26.04; 22.04 is no longer deployed. Each leg
+        # uses the Python its release ships (26.04 has no 3.12 package).
+        include:
+          - os: ubuntu-24.04
+            python-version: "3.12"
+          - os: ubuntu-26.04
+            python-version: "3.14"
 
     env:
       TEST_GIT_BRANCH: ${{ github.head_ref || github.ref_name }}
@@ -67,7 +71,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install integration dependencies
         run: |
