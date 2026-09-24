@@ -102,7 +102,7 @@ The `integration` job in CI cannot be reproduced by running pytest on your dev
 box directly — the playbook is Ubuntu-only and converges the *running host*, so
 running it locally would mutate your workstation (and your dev box may not even
 be one of the CI matrix releases). `scripts/local-ci.sh` spins up disposable
-Ubuntu 22.04 and 24.04 KVM VMs via Multipass, copies the working tree in, and
+Ubuntu 24.04 and 26.04 KVM VMs via Multipass, copies the working tree in, and
 runs the same converge + integration pytest sequence GitHub Actions runs on the
 hosted runners.
 
@@ -123,9 +123,9 @@ moved to Multipass, which is native on an Ubuntu dev box.)
 Run the local CI matrix from the repo root:
 
 ```bash
-make local-integration              # both 22.04 and 24.04
-make local-integration MP_TARGET=22.04
-multipass delete --purge ansible-pull-ci-22-04 ansible-pull-ci-24-04   # tear down
+make local-integration              # both 24.04 and 26.04
+make local-integration MP_TARGET=26.04
+multipass delete --purge ansible-pull-ci-24-04 ansible-pull-ci-26-04   # tear down
 ```
 
 The VMs converge against the working tree exactly as you have it locally
@@ -137,7 +137,7 @@ would catch before pushing. The branch name persisted into the in-VM
 
 Each run recreates the VM from scratch to match CI's ephemeral runners. On
 failure the VM is left running so you can inspect it with
-`multipass shell ansible-pull-ci-22-04`.
+`multipass shell ansible-pull-ci-26-04`.
 
 ### Pre-push gate
 
@@ -151,7 +151,7 @@ Escape hatches when you need them:
 ```bash
 git push --no-verify           # skip the gate entirely
 SKIP_VM_TESTS=1 git push       # unit tests only, skip the slow VM step
-MP_TARGET=22.04 git push       # gate on a single release instead of both
+MP_TARGET=26.04 git push       # gate on a single release instead of both
 ```
 
 The hook is a thin shim that execs the tracked `scripts/pre-push-gate.sh`, so

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local CI mirror via Multipass: boot disposable Ubuntu 22.04 + 24.04 KVM VMs,
+# Local CI mirror via Multipass: boot disposable Ubuntu 24.04 + 26.04 KVM VMs,
 # copy the working tree in, and run the same converge + integration pytest
 # sequence GitHub Actions runs on the hosted runners.
 #
@@ -10,7 +10,7 @@
 #
 # Usage from the repo root:
 #   ./scripts/local-ci.sh                 # both releases, sequentially
-#   MP_TARGET=22.04 ./scripts/local-ci.sh # one release only
+#   MP_TARGET=26.04 ./scripts/local-ci.sh # one release only
 #   TEST_GIT_BRANCH=other ./scripts/...   # label the working-tree snapshot as
 #                                         # this branch (must match BRANCH in
 #                                         # pull.env); it does not check out or
@@ -24,7 +24,7 @@
 #   sudo snap install multipass
 #
 # Tear down leftover instances:
-#   multipass delete --purge ansible-pull-ci-22-04 ansible-pull-ci-24-04
+#   multipass delete --purge ansible-pull-ci-24-04 ansible-pull-ci-26-04
 set -euo pipefail
 set -o pipefail
 
@@ -44,7 +44,7 @@ MEM="${MP_MEM:-2G}"
 DISK="${MP_DISK:-10G}"
 
 # Releases mirror the GitHub Actions integration matrix.
-ALL_RELEASES=(22.04 24.04)
+ALL_RELEASES=(24.04 26.04)
 if [[ -n "${MP_TARGET:-}" ]]; then
   RELEASES=("${MP_TARGET}")
 else

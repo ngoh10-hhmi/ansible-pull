@@ -23,11 +23,11 @@ test:
 	$(MAKE) unit-test
 
 integration: guard-venv
-	$(ACTIVATE) && sudo -E env "PATH=$$PATH" python -m pytest -q tests/integration
+	$(ACTIVATE) && sudo env "PATH=$$PATH" "TEST_GIT_BRANCH=$${TEST_GIT_BRANCH:-main}" python -m pytest -q tests/integration
 
-# Run the CI integration job locally in disposable Ubuntu 22.04 + 24.04
+# Run the CI integration job locally in disposable Ubuntu 24.04 + 26.04
 # Multipass KVM VMs. Requires `multipass` on the host (sudo snap install
-# multipass). Pass MP_TARGET=22.04 (or 24.04) to run a single release.
+# multipass). Pass MP_TARGET=24.04 (or 26.04) to run a single release.
 local-integration:
 	MP_TARGET="$(MP_TARGET)" ./scripts/local-ci.sh
 

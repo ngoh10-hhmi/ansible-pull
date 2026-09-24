@@ -12,17 +12,16 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y git python3-apt shellcheck
 
-# CI uses actions/setup-python to get a managed Python 3.12 regardless of
-# distro. 24.04 ships 3.12 in the binary but not its venv module; 22.04
-# does not have 3.12 at all. Add the deadsnakes PPA on releases where
-# python3.12 is missing, then install 3.12 + its venv package on both —
-# setup-dev.sh needs `python3.12 -m venv` to succeed.
-if ! command -v python3.12 >/dev/null 2>&1; then
-  apt-get install -y software-properties-common
-  add-apt-repository -y ppa:deadsnakes/ppa
-  apt-get update
+# Mirror the CI matrix: 24.04 runs on its own Python 3.12, 26.04 on its
+# Python 3.14 (26.04 has no python3.12 package). Both releases ship the
+# interpreter but not its venv module, which setup-dev.sh needs. setup-dev.sh
+# picks the oldest supported interpreter present, so it uses 3.12 on 24.04 and
+# falls through to 3.14 on 26.04.
+if command -v python3.12 >/dev/null 2>&1; then
+  apt-get install -y python3.12-venv
+else
+  apt-get install -y python3-venv
 fi
-apt-get install -y python3.12 python3.12-venv
 
 cd "${REPO_DIR}"
 

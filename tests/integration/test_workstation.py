@@ -15,14 +15,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 TEST_BRANCH = os.environ.get("TEST_GIT_BRANCH", "main")
 
 
+def _tail(text: str, lines: int = 60) -> str:
+    return "\n".join(text.splitlines()[-lines:])
+
+
 def run(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    # check=True would raise CalledProcessError, whose message drops the
+    # captured output -- so a failing run-ansible-pull showed only "exit
+    # status 1" in CI. Fail with the tail of both streams instead.
+    result = subprocess.run(
         args,
         cwd=cwd,
-        check=True,
+        check=False,
         text=True,
         capture_output=True,
     )
+    if result.returncode != 0:
+        raise AssertionError(
+            f"{' '.join(args)} exited {result.returncode}\n"
+            f"--- stdout (tail) ---\n{_tail(result.stdout)}\n"
+            f"--- stderr (tail) ---\n{_tail(result.stderr)}"
+        )
+    return result
 
 
 def run_allow_failure(
