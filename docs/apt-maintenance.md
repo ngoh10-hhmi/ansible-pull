@@ -14,7 +14,7 @@ Workstation package management in this repository follows a tiered approach to b
 
 Some packages must not move on their own schedule:
 
-- **NVIDIA driver packages** (`nvidia-`, `libnvidia-`) are listed in `Unattended-Upgrade::Package-Blacklist` in `/etc/apt/apt.conf.d/52ansible-unattended-upgrades`. The userspace libraries must match the loaded kernel module, and silent background upgrades produce a mismatch that breaks the GPU stack until reboot. Operators upgrade the driver intentionally; the blacklist only blocks the unattended path. Edit `base_unattended_upgrade_package_blacklist` in the role to add more entries.
+- **NVIDIA driver packages** (`nvidia-`, `libnvidia-`, plus the prebuilt-module prefixes `linux-modules-nvidia-`, `linux-objects-nvidia-`, `linux-signatures-nvidia-`) are listed in `Unattended-Upgrade::Package-Blacklist` in `/etc/apt/apt.conf.d/52ansible-unattended-upgrades`. The userspace libraries must match the loaded kernel module, and silent background upgrades produce a mismatch that breaks the GPU stack until reboot. Operators upgrade the driver intentionally; the blacklist only blocks the unattended path. Entries are matched from the start of the package name (`re.match`), so `nvidia-` does not cover `linux-modules-nvidia-*`. Edit `base_unattended_upgrade_package_blacklist` in the role to add more entries.
 
 ## Targeted CVE mitigations
 
