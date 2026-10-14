@@ -100,14 +100,18 @@ base_unattended_upgrade_origins_patterns:
   - 'origin=Ubuntu,archive=${distro_codename}-security'
 
 # Package name patterns excluded from unattended-upgrades. Each entry is
-# matched as a regex against package names, so a bare prefix like "nvidia-"
-# pins every nvidia-* and *nvidia-* package. NVIDIA driver packages must
+# matched with re.match (anchored at the START of the package name) by
+# unattended-upgrades, so "nvidia-" pins nvidia-* but NOT linux-modules-nvidia-*;
+# the prebuilt per-kernel module packages need their own prefixes. NVIDIA driver packages must
 # stay at the version we install — letting the security timer upgrade them
 # in the background drifts the userspace libraries out of sync with the
 # loaded kernel module until the next reboot.
 base_unattended_upgrade_package_blacklist:
   - 'nvidia-'
   - 'libnvidia-'
+  - 'linux-modules-nvidia-'
+  - 'linux-objects-nvidia-'
+  - 'linux-signatures-nvidia-'
 
 # Per-UID inotify instance ceiling. The kernel default of 128 was sized for a
 # far smaller desktop than these workstations: a GNOME session plus the usual

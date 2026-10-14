@@ -222,6 +222,10 @@ def test_unattended_upgrades_policy_is_installed() -> None:
     assert unattended.contains("Unattended-Upgrade::Package-Blacklist")
     assert unattended.contains('"nvidia-";')
     assert unattended.contains('"libnvidia-";')
+    # Anchored match: prebuilt per-kernel module packages need explicit prefixes.
+    assert unattended.contains('"linux-modules-nvidia-";')
+    assert unattended.contains('"linux-objects-nvidia-";')
+    assert unattended.contains('"linux-signatures-nvidia-";')
 
 
 def test_inotify_instance_limit_is_raised() -> None:
