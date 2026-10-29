@@ -287,7 +287,13 @@ resets to that exact SHA on every run, so it never drifts forward.
   stay in place for the runtime wrapper to use on private-repo pulls.
 - `update-installed-browsers.sh` refreshes snaps individually so a single bad
   snap does not block the others. Failures are aggregated and printed; the
-  unit returns non-zero if any snap failed so systemd marks it failed.
+  unit returns non-zero if any snap failed so systemd marks it failed. The
+  exception is snapd refusing because the snap is running (`has running apps`).
+  That is reported as deferred and does not fail the unit; snapd's own
+  auto-refresh updates it once the app is closed. Do not switch to
+  `--ignore-running`, which swaps the snap under an open session. Before this
+  change, any workstation with Firefox left open overnight fired a Slack alert
+  every night (observed 2026-10-29 on `support-ws2`).
 - The APT helpers (`apt-refresh.sh` and `upgrade-installed-apt-packages.sh`)
   pass `DPkg::Lock::Timeout=600` **and** route every `apt-get` invocation
   through `apt_get_with_lock_retry` in `scripts/lib/apt_lock.sh`. Both are

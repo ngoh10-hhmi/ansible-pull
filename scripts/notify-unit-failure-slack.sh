@@ -21,7 +21,7 @@ set -euo pipefail
 
 # Maximum characters of failure context to embed in the Slack message, leaving
 # headroom under Slack's per-attachment text limits.
-CONTEXT_MAX_CHARS=2500
+CONTEXT_MAX_CHARS=3500
 
 # Where to read the pull settings from. Resolved at call time (not source time)
 # so the ANSIBLE_PULL_* overrides work no matter when they are exported.
@@ -52,21 +52,38 @@ load_webhook() {
 
 # Collect a compact failure context: the unit's current state plus the tail of
 # its journal. Both are best-effort; missing tools must not abort the alert.
+#
+# The error that failed the unit is almost always the last thing it logged, so
+# when the context is over budget the journal is cut from the front, never the
+# end. Cutting the end used to drop exactly that line: a browser-package-updates
+# alert spent its whole budget on apt's chatter and stopped right where the
+# `snap refresh` error began. `-o cat` drops journalctl's date/host/unit[pid]
+# prefix; the status block already has the failure time and the title the host.
 gather_context() {
   local unit="$1"
   local unit_status="" journal_tail=""
+  local journal_budget=0
 
   unit_status="$(systemctl status "${unit}" --no-pager --lines=0 2>&1 | head -n 12 || true)"
-  journal_tail="$(journalctl -u "${unit}" --no-pager --lines=25 2>&1 | tail -n 25 || true)"
+  journal_tail="$(journalctl -u "${unit}" --no-pager --output=cat --lines=40 2>&1 | tail -n 40 || true)"
 
-  printf '%s\n\n--- recent journal ---\n%s\n' "${unit_status}" "${journal_tail}"
+  journal_budget=$(( CONTEXT_MAX_CHARS - ${#unit_status} ))
+  if (( journal_budget < 500 )); then
+    journal_budget=500
+  fi
+
+  printf '%s\n\n--- recent journal ---\n%s\n' \
+    "${unit_status}" "$(truncate_context "${journal_tail}" "${journal_budget}")"
 }
 
+# Keep the last <max> characters of text (default CONTEXT_MAX_CHARS), marking
+# the cut with a leading "..." line.
 truncate_context() {
   local text="$1"
+  local max="${2:-${CONTEXT_MAX_CHARS}}"
 
-  if (( ${#text} > CONTEXT_MAX_CHARS )); then
-    printf '%s\n...' "${text:0:CONTEXT_MAX_CHARS}"
+  if (( ${#text} > max )); then
+    printf '...\n%s' "${text: -max}"
   else
     printf '%s' "${text}"
   fi
@@ -105,7 +122,7 @@ send_alert() {
   local host="" context="" text="" payload=""
 
   host="$(hostname -s 2>/dev/null || hostname || echo unknown)"
-  context="$(truncate_context "$(gather_context "${unit}")")"
+  context="$(gather_context "${unit}")"
 
   text="Maintenance unit \`${unit}\` failed on \`${host}\`.
 
