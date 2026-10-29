@@ -75,17 +75,35 @@ filter_to_installed_snaps() {
   done
 }
 
+# snapd refuses a manual refresh of a snap with open windows ("refresh app
+# awareness"): `snap refresh firefox` exits 1 with
+#   error: cannot refresh "firefox": snap "firefox" has running apps (firefox), pids: ...
+# That is a deferral, not a failure. snapd's own auto-refresh retries until the
+# app is closed, forcing the update after its postponement window. It used to
+# fail the unit, and Slack-alert, every night on any workstation where someone
+# left Firefox open (observed 2026-10-29 on support-ws2). We deliberately do not
+# pass --ignore-running, which would swap the snap under the open session. The
+# CLI wraps long errors across lines, so whitespace is collapsed before matching.
+is_snap_running_apps_error() {
+  local output="$1"
+
+  output="$(printf '%s' "${output}" | tr -s '[:space:]' ' ')"
+  [[ "${output}" == *"has running apps"* ]]
+}
+
 # Refresh each snap individually so a single failing snap (e.g. transient
 # Snap Store error or a held revision) does not block updates for the
 # others. Aggregate per-snap exit status and surface a final summary so the
 # operator can see exactly which snaps need follow-up. Returns non-zero if
 # any snap failed, so the calling systemd unit / playbook treats the run as
-# failed even though we kept going.
+# failed even though we kept going. Snaps deferred because they are running
+# are reported but do not count as failures.
 refresh_snaps_individually() {
   local snap_name=""
   local refresh_output=""
   local refresh_status=0
   local failed=()
+  local deferred=()
 
   for snap_name in "$@"; do
     echo "Refreshing snap: ${snap_name}"
@@ -94,10 +112,19 @@ refresh_snaps_individually() {
     else
       refresh_status=$?
       printf '%s\n' "${refresh_output}"
-      echo "Snap ${snap_name} refresh failed with exit code ${refresh_status}"
-      failed+=("${snap_name}")
+      if is_snap_running_apps_error "${refresh_output}"; then
+        echo "Snap ${snap_name} is running; deferring to snapd auto-refresh"
+        deferred+=("${snap_name}")
+      else
+        echo "Snap ${snap_name} refresh failed with exit code ${refresh_status}"
+        failed+=("${snap_name}")
+      fi
     fi
   done
+
+  if (( ${#deferred[@]} > 0 )); then
+    echo "Browser snap refresh deferred while running: ${deferred[*]}"
+  fi
 
   if (( ${#failed[@]} > 0 )); then
     echo "Browser snap refresh completed with failures: ${failed[*]}" >&2

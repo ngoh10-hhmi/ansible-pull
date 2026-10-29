@@ -133,7 +133,7 @@ def test_load_webhook_reads_pull_env_via_envfile_lib(tmp_path: Path) -> None:
     assert "WEBHOOK=https://fromfile.example/hook" in result.stdout
 
 
-def test_truncate_context_caps_long_text() -> None:
+def test_truncate_context_keeps_the_tail() -> None:
     result = run_bash(
         textwrap.dedent(
             f"""\
@@ -143,6 +143,42 @@ def test_truncate_context_caps_long_text() -> None:
             """
         )
     )
-    # First 10 chars, then a truncation marker on its own line.
-    assert result.stdout.splitlines()[0] == "0123456789"
-    assert result.stdout.splitlines()[1] == "..."
+    # A truncation marker on its own line, then the last 10 chars.
+    assert result.stdout.splitlines() == ["...", "89ABCDEFGH"]
+
+
+def test_truncate_context_honors_explicit_limit() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source {SCRIPT}
+            truncate_context "0123456789" 4
+            """
+        )
+    )
+    assert result.stdout.splitlines() == ["...", "6789"]
+
+
+def test_gather_context_keeps_final_error_when_journal_is_long() -> None:
+    # Regression: a browser-package-updates alert spent the whole budget on
+    # apt output and was cut off right before the snap refresh error.
+    result = run_bash(
+        textwrap.dedent(
+            f"""\
+            source {SCRIPT}
+            CONTEXT_MAX_CHARS=800
+            systemctl() {{ echo "x browser-package-updates.service failed"; }}
+            journalctl() {{
+              for i in $(seq 1 60); do echo "Reading package lists... line $i"; done
+              echo 'error: cannot refresh "firefox": snap has running apps'
+            }}
+            gather_context browser-package-updates.service
+            """
+        )
+    )
+    out = result.stdout
+    assert out.startswith("x browser-package-updates.service failed")
+    assert "--- recent journal ---\n...\n" in out
+    assert 'error: cannot refresh "firefox"' in out
+    assert "line 1\n" not in out
+    assert len(out) <= 800 + 100

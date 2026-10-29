@@ -58,7 +58,9 @@ Notes:
   try to upgrade.
 - `base_browser_update_snaps` does not install snaps. It only defines which
   already-installed browser snaps the daily browser timer should try to
-  refresh.
+  refresh. A snap that is open when the timer fires is skipped as deferred
+  (snapd refuses to refresh running apps) and left to snapd's own
+  auto-refresh; it does not fail the unit.
 - `base_workstation_apt_repos` entries are expected to include fields like
   `key_url`, `key_filename`, and `repo`.
 

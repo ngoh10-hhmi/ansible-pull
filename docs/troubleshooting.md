@@ -383,8 +383,13 @@ wrapper, so their failures do not go through the wrapper's Slack path. Each one
 instead carries `OnFailure=ansible-pull-slack-notify@%n.service`, which runs
 `/usr/local/sbin/notify-unit-failure-slack` with the failed unit name. The
 notifier reads `SLACK_WEBHOOK_URL` from `/etc/ansible/pull.env` (the same
-webhook the pull wrapper uses) and posts the unit status plus a short journal
-excerpt. With no webhook configured it is a silent no-op.
+webhook the pull wrapper uses) and posts the unit status plus the last 40
+journal lines for the unit, without journalctl's date/host prefix. If that runs
+past the ~3500-character budget, the oldest lines are dropped (marked `...`),
+so the final error line is kept. If an alert still does not show the cause,
+read the full run on the host:
+`journalctl -u <unit> --since today --no-pager`. With no webhook configured
+the notifier does nothing.
 
 Verify or exercise it:
 

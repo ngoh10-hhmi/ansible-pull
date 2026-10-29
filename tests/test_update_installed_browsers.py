@@ -86,6 +86,58 @@ def test_refresh_snaps_individually_aggregates_multiple_failures() -> None:
     assert "completed with failures: firefox brave" in result.stderr
 
 
+def test_refresh_snaps_individually_defers_running_snap() -> None:
+    # Exact output snapd produced on support-ws2 (2026-10-29), wrapped by the
+    # snap CLI across several lines.
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/update-installed-browsers.sh
+            snap() {
+              if [[ "$2" == "firefox" ]]; then
+                printf '%s\\n' \\
+                  'error: cannot refresh "firefox": snap "firefox"' \\
+                  '       has running apps (firefox), pids:' \\
+                  '       8448,8624,8717'
+                return 1
+              fi
+              echo "${2} refreshed"
+            }
+            refresh_snaps_individually firefox chromium
+            """
+        )
+    )
+
+    assert result.returncode == 0
+    assert "Snap firefox is running; deferring to snapd auto-refresh" in result.stdout
+    assert "deferred while running: firefox" in result.stdout
+    assert "chromium refreshed" in result.stdout
+    assert "failed" not in result.stdout + result.stderr
+
+
+def test_refresh_snaps_individually_running_snap_does_not_mask_real_failure() -> None:
+    result = run_bash(
+        textwrap.dedent(
+            """\
+            source scripts/update-installed-browsers.sh
+            snap() {
+              case "$2" in
+                firefox) echo 'error: snap "firefox" has running apps (firefox)'; return 1 ;;
+                chromium) echo 'error: cannot refresh "chromium": store unavailable'; return 1 ;;
+              esac
+            }
+            refresh_snaps_individually firefox chromium
+            """
+        ),
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "deferred while running: firefox" in result.stdout
+    assert "Snap chromium refresh failed with exit code 1" in result.stdout
+    assert "completed with failures: chromium" in result.stderr
+
+
 def test_read_requested_snaps_skips_comments_and_blanks(tmp_path: Path) -> None:
     snap_list = tmp_path / "browser-snap-updates.list"
     snap_list.write_text(
